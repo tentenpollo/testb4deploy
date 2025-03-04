@@ -2,7 +2,6 @@
 require_once 'includes/config.php';
 require_once 'includes/functions.php';
 
-// Check if already logged in
 if (is_logged_in() || is_guest()) {
     header("Location: create_ticket.php");
     exit;
@@ -11,13 +10,11 @@ if (is_logged_in() || is_guest()) {
 $errors = [];
 $success = false;
 
-// Process guest form
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $email = filter_input(INPUT_POST, 'email', FILTER_SANITIZE_EMAIL);
     $first_name = sanitize($_POST['first_name'] ?? '');
     $last_name = sanitize($_POST['last_name'] ?? '');
     
-    // Validate form data
     if (empty($email)) {
         $errors[] = "Email is required";
     } elseif (!filter_var($email, FILTER_VALIDATE_EMAIL)) {
@@ -88,7 +85,7 @@ include 'includes/header.php';
             </p>
         </div>
         
-        <form method="post" action="guest.php" class="guest-form">
+        <form method="post" action="guest.php" class="guest-form" onsubmit="return validateForm()">
             <div class="form-group">
                 <label for="email">Email Address</label>
                 <input type="email" id="email" name="email" class="form-control" value="<?php echo isset($_POST['email']) ? htmlspecialchars($_POST['email']) : ''; ?>" required>
@@ -118,5 +115,30 @@ include 'includes/header.php';
         </form>
     </div>
 </div>
+
+<script>
+function validateForm() {
+    const email = document.getElementById('email').value.trim();
+    const firstName = document.getElementById('first_name').value.trim();
+    const lastName = document.getElementById('last_name').value.trim();
+    
+    if (!email || !firstName || !lastName) {
+        alert('Please fill out all fields.');
+        return false;
+    }
+    
+    if (!validateEmail(email)) {
+        alert('Please enter a valid email address.');
+        return false;
+    }
+    
+    return true;
+}
+
+function validateEmail(email) {
+    const re = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    return re.test(String(email).toLowerCase());
+}
+</script>
 
 <?php include 'includes/footer.php'; ?>
