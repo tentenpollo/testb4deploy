@@ -19,10 +19,8 @@ function db_connect() {
     }
 }
 
-// Session handling
 session_start();
 
-// Auth functions
 function is_logged_in() {
     return isset($_SESSION['user_id']);
 }
