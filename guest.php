@@ -31,7 +31,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     
     // Create guest user if no errors
     if (empty($errors)) {
-        $db = db_connect();
+        $mysqli = db_connect();
         
         // Generate a unique token for the guest
         $token = generate_token();
@@ -39,16 +39,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         // Set expiration time (e.g., 7 days from now)
         $expires_at = date('Y-m-d H:i:s', strtotime('+7 days'));
         
-        $stmt = $db->prepare("
+        $stmt = $mysqli->prepare("
             INSERT INTO guest_users (email, token, first_name, last_name, expires_at) 
             VALUES (?, ?, ?, ?, ?)
         ");
         
-        if ($stmt->execute([$email, $token, $first_name, $last_name, $expires_at])) {
+        // Bind parameters
+        $stmt->bind_param("sssss", $email, $token, $first_name, $last_name, $expires_at);
+        
+        // Execute the statement
+        if ($stmt->execute()) {
             $success = true;
             
-            // Store guest info in session
-            $_SESSION['guest_id'] = $db->lastInsertId();
+            $_SESSION['guest_id'] = $mysqli->insert_id;
             $_SESSION['guest_token'] = $token;
             
             // Redirect to create ticket page
@@ -57,6 +60,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         } else {
             $errors[] = "Failed to create guest access. Please try again.";
         }
+        
+        // Close the statement
+        $stmt->close();
     }
 }
 

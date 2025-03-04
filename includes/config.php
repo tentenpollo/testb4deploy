@@ -5,18 +5,26 @@ define('DB_NAME', 'ticketing_system');
 define('DB_USER', 'root');
 define('DB_PASS', '');
 
+// Global connection variable
+$mysqli = null;
+
 function db_connect() {
-    try {
-        $pdo = new PDO(
-            "pgsql:host=" . DB_HOST . ";dbname=" . DB_NAME,
-            DB_USER,
-            DB_PASS,
-            [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION]
-        );
-        return $pdo;
-    } catch (PDOException $e) {
-        die("Connection failed: " . $e->getMessage());
+    global $mysqli;
+    
+    // Create connection if it doesn't exist
+    if ($mysqli === null) {
+        $mysqli = new mysqli(DB_HOST, DB_USER, DB_PASS, DB_NAME);
+        
+        // Check connection
+        if ($mysqli->connect_error) {
+            die("Connection failed: " . $mysqli->connect_error);
+        }
+        
+        // Set charset
+        $mysqli->set_charset("utf8mb4");
     }
+    
+    return $mysqli;
 }
 
 session_start();
@@ -51,106 +59,175 @@ function generate_token($length = 32) {
 
 // Sanitize input
 function sanitize($input) {
-    return htmlspecialchars(trim($input), ENT_QUOTES, 'UTF-8');
+    global $mysqli;
+    if (!$mysqli) {
+        db_connect();
+    }
+    $input = trim($input);
+    $input = $mysqli->real_escape_string($input);
+    return htmlspecialchars($input, ENT_QUOTES, 'UTF-8');
 }
 
 // Get user data
 function get_user_data($user_id) {
-    $db = db_connect();
-    $stmt = $db->prepare("SELECT * FROM users WHERE user_id = ?");
-    $stmt->execute([$user_id]);
-    return $stmt->fetch(PDO::FETCH_ASSOC);
+    $mysqli = db_connect();
+    
+    $stmt = $mysqli->prepare("SELECT * FROM users WHERE user_id = ?");
+    $stmt->bind_param("i", $user_id);
+    $stmt->execute();
+    $result = $stmt->get_result();
+    $user_data = $result->fetch_assoc();
+    $stmt->close();
+    
+    return $user_data;
 }
 
 // Get guest data
 function get_guest_data($guest_id) {
-    $db = db_connect();
-    $stmt = $db->prepare("SELECT * FROM guest_users WHERE guest_id = ?");
-    $stmt->execute([$guest_id]);
-    return $stmt->fetch(PDO::FETCH_ASSOC);
+    $mysqli = db_connect();
+    
+    $stmt = $mysqli->prepare("SELECT * FROM guest_users WHERE guest_id = ?");
+    $stmt->bind_param("i", $guest_id);
+    $stmt->execute();
+    $result = $stmt->get_result();
+    $guest_data = $result->fetch_assoc();
+    $stmt->close();
+    
+    return $guest_data;
 }
 
 // Get departments
 function get_departments() {
-    $db = db_connect();
-    $stmt = $db->prepare("SELECT * FROM departments WHERE is_active = TRUE");
+    $mysqli = db_connect();
+    
+    $stmt = $mysqli->prepare("SELECT * FROM departments WHERE is_active = TRUE");
     $stmt->execute();
-    return $stmt->fetchAll(PDO::FETCH_ASSOC);
+    $result = $stmt->get_result();
+    $departments = [];
+    
+    while ($row = $result->fetch_assoc()) {
+        $departments[] = $row;
+    }
+    
+    $stmt->close();
+    return $departments;
 }
 
 // Get categories by department
 function get_categories_by_department($department_id) {
-    $db = db_connect();
-    $stmt = $db->prepare("SELECT * FROM categories WHERE department_id = ? AND is_active = TRUE");
-    $stmt->execute([$department_id]);
-    return $stmt->fetchAll(PDO::FETCH_ASSOC);
+    $mysqli = db_connect();
+    
+    $stmt = $mysqli->prepare("SELECT * FROM categories WHERE department_id = ? AND is_active = TRUE");
+    $stmt->bind_param("i", $department_id);
+    $stmt->execute();
+    $result = $stmt->get_result();
+    $categories = [];
+    
+    while ($row = $result->fetch_assoc()) {
+        $categories[] = $row;
+    }
+    
+    $stmt->close();
+    return $categories;
 }
 
 // Get priorities
 function get_priorities() {
-    $db = db_connect();
-    $stmt = $db->prepare("SELECT * FROM priorities");
+    $mysqli = db_connect();
+    
+    $stmt = $mysqli->prepare("SELECT * FROM priorities");
     $stmt->execute();
-    return $stmt->fetchAll(PDO::FETCH_ASSOC);
+    $result = $stmt->get_result();
+    $priorities = [];
+    
+    while ($row = $result->fetch_assoc()) {
+        $priorities[] = $row;
+    }
+    
+    $stmt->close();
+    return $priorities;
 }
 
 // Create ticket
 function create_ticket($subject, $description, $department_id, $category_id, $priority_id = 1) {
-    $db = db_connect();
+    $mysqli = db_connect();
     
     // Get initial status (usually "New" or "Open")
-    $stmt = $db->prepare("SELECT status_id FROM statuses WHERE name = 'New' LIMIT 1");
+    $stmt = $mysqli->prepare("SELECT status_id FROM statuses WHERE name = 'New' LIMIT 1");
     $stmt->execute();
-    $status = $stmt->fetch(PDO::FETCH_ASSOC);
+    $result = $stmt->get_result();
+    $status = $result->fetch_assoc();
     $status_id = $status ? $status['status_id'] : 1;
+    $stmt->close();
     
+    // Start transaction
+    $mysqli->autocommit(FALSE);
     try {
-        $db->beginTransaction();
-        
         // Insert ticket
-        $stmt = $db->prepare("
+        $stmt = $mysqli->prepare("
             INSERT INTO tickets 
             (subject, description, department_id, category_id, priority_id, status_id, registered_user_id, guest_user_id) 
             VALUES (?, ?, ?, ?, ?, ?, ?, ?)
         ");
         
         if (is_logged_in()) {
-            $stmt->execute([$subject, $description, $department_id, $category_id, $priority_id, $status_id, $_SESSION['user_id'], null]);
+            $registered_user_id = $_SESSION['user_id'];
+            $guest_user_id = null;
+            $stmt->bind_param("ssiiiisi", $subject, $description, $department_id, $category_id, $priority_id, $status_id, $registered_user_id, $guest_user_id);
         } else {
-            $stmt->execute([$subject, $description, $department_id, $category_id, $priority_id, $status_id, null, $_SESSION['guest_id']]);
+            $registered_user_id = null;
+            $guest_user_id = $_SESSION['guest_id'];
+            $stmt->bind_param("ssiiiisi", $subject, $description, $department_id, $category_id, $priority_id, $status_id, $registered_user_id, $guest_user_id);
         }
         
-        $ticket_id = $db->lastInsertId();
+        $stmt->execute();
+        $ticket_id = $mysqli->insert_id;
+        $stmt->close();
         
         // Create initial ticket history
-        $stmt = $db->prepare("
+        $stmt = $mysqli->prepare("
             INSERT INTO ticket_history 
             (ticket_id, field_name, old_value, new_value, changed_by_user_id, changed_by_staff_id) 
             VALUES (?, ?, ?, ?, ?, ?)
         ");
         
+        $field_name = 'status';
+        $old_value = null;
+        $new_value = 'New';
+        $staff_id = null;
+        
         if (is_logged_in()) {
-            $stmt->execute([$ticket_id, 'status', null, 'New', $_SESSION['user_id'], null]);
+            $user_id = $_SESSION['user_id'];
+            $stmt->bind_param("isssii", $ticket_id, $field_name, $old_value, $new_value, $user_id, $staff_id);
         } else {
-            $stmt->execute([$ticket_id, 'status', null, 'New', null, null]);
+            $user_id = null;
+            $stmt->bind_param("isssii", $ticket_id, $field_name, $old_value, $new_value, $user_id, $staff_id);
         }
         
-        $db->commit();
+        $stmt->execute();
+        $stmt->close();
+        
+        // Commit transaction
+        $mysqli->commit();
         return $ticket_id;
         
     } catch (Exception $e) {
-        $db->rollBack();
+        // Rollback on error
+        $mysqli->rollback();
         error_log("Error creating ticket: " . $e->getMessage());
         return false;
+    } finally {
+        // Restore autocommit setting
+        $mysqli->autocommit(TRUE);
     }
 }
 
 // Get user tickets
 function get_user_tickets() {
-    $db = db_connect();
+    $mysqli = db_connect();
     
     if (is_logged_in()) {
-        $stmt = $db->prepare("
+        $stmt = $mysqli->prepare("
             SELECT t.*, s.name as status, p.name as priority, p.color as priority_color, d.name as department, c.name as category 
             FROM tickets t
             JOIN statuses s ON t.status_id = s.status_id
@@ -160,9 +237,9 @@ function get_user_tickets() {
             WHERE t.registered_user_id = ?
             ORDER BY t.created_at DESC
         ");
-        $stmt->execute([$_SESSION['user_id']]);
+        $stmt->bind_param("i", $_SESSION['user_id']);
     } else {
-        $stmt = $db->prepare("
+        $stmt = $mysqli->prepare("
             SELECT t.*, s.name as status, p.name as priority, p.color as priority_color, d.name as department, c.name as category 
             FROM tickets t
             JOIN statuses s ON t.status_id = s.status_id
@@ -172,18 +249,27 @@ function get_user_tickets() {
             WHERE t.guest_user_id = ?
             ORDER BY t.created_at DESC
         ");
-        $stmt->execute([$_SESSION['guest_id']]);
+        $stmt->bind_param("i", $_SESSION['guest_id']);
     }
     
-    return $stmt->fetchAll(PDO::FETCH_ASSOC);
+    $stmt->execute();
+    $result = $stmt->get_result();
+    $tickets = [];
+    
+    while ($row = $result->fetch_assoc()) {
+        $tickets[] = $row;
+    }
+    
+    $stmt->close();
+    return $tickets;
 }
 
 // Get single ticket with comments
 function get_ticket($ticket_id) {
-    $db = db_connect();
+    $mysqli = db_connect();
     
     // Get ticket details
-    $stmt = $db->prepare("
+    $stmt = $mysqli->prepare("
         SELECT t.*, s.name as status, p.name as priority, p.color as priority_color, 
                d.name as department, c.name as category
         FROM tickets t
@@ -193,8 +279,11 @@ function get_ticket($ticket_id) {
         JOIN categories c ON t.category_id = c.category_id
         WHERE t.ticket_id = ?
     ");
-    $stmt->execute([$ticket_id]);
-    $ticket = $stmt->fetch(PDO::FETCH_ASSOC);
+    $stmt->bind_param("i", $ticket_id);
+    $stmt->execute();
+    $result = $stmt->get_result();
+    $ticket = $result->fetch_assoc();
+    $stmt->close();
     
     if (!$ticket) {
         return false;
@@ -210,7 +299,7 @@ function get_ticket($ticket_id) {
     }
     
     // Get comments
-    $stmt = $db->prepare("
+    $stmt = $mysqli->prepare("
         SELECT tc.*, 
                u.first_name as user_first_name, u.last_name as user_last_name,
                g.first_name as guest_first_name, g.last_name as guest_last_name,
@@ -223,34 +312,45 @@ function get_ticket($ticket_id) {
         WHERE tc.ticket_id = ? AND (tc.is_internal = FALSE OR tc.is_internal IS NULL)
         ORDER BY tc.created_at ASC
     ");
-    $stmt->execute([$ticket_id]);
-    $ticket['comments'] = $stmt->fetchAll(PDO::FETCH_ASSOC);
+    $stmt->bind_param("i", $ticket_id);
+    $stmt->execute();
+    $result = $stmt->get_result();
+    $comments = [];
+    
+    while ($row = $result->fetch_assoc()) {
+        $comments[] = $row;
+    }
+    
+    $ticket['comments'] = $comments;
+    $stmt->close();
     
     return $ticket;
 }
 
 // Add comment to ticket
 function add_ticket_comment($ticket_id, $content) {
-    $db = db_connect();
+    $mysqli = db_connect();
     
     try {
         if (is_logged_in()) {
-            $stmt = $db->prepare("
+            $stmt = $mysqli->prepare("
                 INSERT INTO ticket_comments 
                 (ticket_id, content, registered_user_id) 
                 VALUES (?, ?, ?)
             ");
-            $stmt->execute([$ticket_id, $content, $_SESSION['user_id']]);
+            $stmt->bind_param("isi", $ticket_id, $content, $_SESSION['user_id']);
         } else {
-            $stmt = $db->prepare("
+            $stmt = $mysqli->prepare("
                 INSERT INTO ticket_comments 
                 (ticket_id, content, guest_user_id) 
                 VALUES (?, ?, ?)
             ");
-            $stmt->execute([$ticket_id, $content, $_SESSION['guest_id']]);
+            $stmt->bind_param("isi", $ticket_id, $content, $_SESSION['guest_id']);
         }
         
-        return true;
+        $result = $stmt->execute();
+        $stmt->close();
+        return $result;
     } catch (Exception $e) {
         error_log("Error adding comment: " . $e->getMessage());
         return false;

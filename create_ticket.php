@@ -56,7 +56,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         }
     }
 
-    // If no errors, save the ticket and attachment
     if (empty($errors)) {
         $db = db_connect();
 

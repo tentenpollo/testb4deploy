@@ -18,21 +18,30 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $errors[] = "Both email and password are required";
     } else {
         $db = db_connect();
-        $stmt = $db->prepare("SELECT user_id, password_hash FROM users WHERE email = ? AND is_active = TRUE");
-        $stmt->execute([$email]);
-        $user = $stmt->fetch(PDO::FETCH_ASSOC);
         
-        if ($user && password_verify($password, $user['password_hash'])) {
-            $_SESSION['user_id'] = $user['user_id'];
+        // Using mysqli instead of deprecated mysql extension
+        $email_escaped = $db->real_escape_string($email);
+        $query = "SELECT user_id, password_hash FROM users WHERE email = '$email_escaped' AND is_active = TRUE";
+        $result = $db->query($query);
+        
+        if ($result && $result->num_rows > 0) {
+            $user = $result->fetch_assoc();
             
-            $updateStmt = $db->prepare("UPDATE users SET last_login = CURRENT_TIMESTAMP WHERE user_id = ?");
-            $updateStmt->execute([$user['user_id']]);
-            
-            $redirect = $_SESSION['redirect_after_login'] ?? 'dashboard.php';
-            unset($_SESSION['redirect_after_login']);
-            
-            header("Location: $redirect");
-            exit;
+            if (password_verify($password, $user['password_hash'])) {
+                $_SESSION['user_id'] = $user['user_id'];
+                
+                $user_id_escaped = $db->real_escape_string($user['user_id']);
+                $update_query = "UPDATE users SET last_login = CURRENT_TIMESTAMP WHERE user_id = '$user_id_escaped'";
+                $db->query($update_query);
+                
+                $redirect = $_SESSION['redirect_after_login'] ?? 'dashboard.php';
+                unset($_SESSION['redirect_after_login']);
+                
+                header("Location: $redirect");
+                exit;
+            } else {
+                $errors[] = "Invalid email or password";
+            }
         } else {
             $errors[] = "Invalid email or password";
         }

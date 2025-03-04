@@ -96,20 +96,26 @@ function user_can_access_ticket($ticket_id) {
     $db = db_connect();
     
     if (is_logged_in()) {
-        $stmt = $db->prepare("
+        $ticket_id_escaped = $db->real_escape_string($ticket_id);
+        $user_id_escaped = $db->real_escape_string($_SESSION['user_id']);
+        
+        $query = "
             SELECT 1 FROM tickets 
-            WHERE ticket_id = ? AND registered_user_id = ?
-        ");
-        $stmt->execute([$ticket_id, $_SESSION['user_id']]);
+            WHERE ticket_id = '$ticket_id_escaped' AND registered_user_id = '$user_id_escaped'
+        ";
+        $result = $db->query($query);
     } else {
-        $stmt = $db->prepare("
+        $ticket_id_escaped = $db->real_escape_string($ticket_id);
+        $guest_id_escaped = $db->real_escape_string($_SESSION['guest_id']);
+        
+        $query = "
             SELECT 1 FROM tickets 
-            WHERE ticket_id = ? AND guest_user_id = ?
-        ");
-        $stmt->execute([$ticket_id, $_SESSION['guest_id']]);
+            WHERE ticket_id = '$ticket_id_escaped' AND guest_user_id = '$guest_id_escaped'
+        ";
+        $result = $db->query($query);
     }
     
-    return (bool) $stmt->fetch(PDO::FETCH_COLUMN);
+    return ($result && $result->num_rows > 0);
 }
 
 // Send email notification

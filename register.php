@@ -47,10 +47,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     // Check if email already exists
     if (empty($errors)) {
         $db = db_connect();
-        $stmt = $db->prepare("SELECT user_id FROM users WHERE email = ?");
-        $stmt->execute([$email]);
+        $email_escaped = $db->real_escape_string($email);
+        $query = "SELECT user_id FROM users WHERE email = '$email_escaped'";
+        $result = $db->query($query);
         
-        if ($stmt->fetch(PDO::FETCH_ASSOC)) {
+        if ($result && $result->num_rows > 0) {
             $errors[] = "Email already registered. Please login instead.";
         }
     }
@@ -60,16 +61,22 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $db = db_connect();
         $password_hash = password_hash($password, PASSWORD_DEFAULT);
         
-        $stmt = $db->prepare("
-            INSERT INTO users (email, password_hash, first_name, last_name, phone) 
-            VALUES (?, ?, ?, ?, ?)
-        ");
+        $email_escaped = $db->real_escape_string($email);
+        $password_hash_escaped = $db->real_escape_string($password_hash);
+        $first_name_escaped = $db->real_escape_string($first_name);
+        $last_name_escaped = $db->real_escape_string($last_name);
+        $phone_escaped = $db->real_escape_string($phone);
         
-        if ($stmt->execute([$email, $password_hash, $first_name, $last_name, $phone])) {
+        $query = "
+            INSERT INTO users (email, password_hash, first_name, last_name, phone) 
+            VALUES ('$email_escaped', '$password_hash_escaped', '$first_name_escaped', '$last_name_escaped', '$phone_escaped')
+        ";
+        
+        if ($db->query($query)) {
             $success = true;
             
             // Log the user in
-            $user_id = $db->lastInsertId();
+            $user_id = $db->insert_id;
             $_SESSION['user_id'] = $user_id;
             
             // Redirect to dashboard or redirect URL
@@ -79,7 +86,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             header("Location: $redirect");
             exit;
         } else {
-            $errors[] = "Registration failed. Please try again.";
+            $errors[] = "Registration failed. Please try again. Error: " . $db->error;
         }
     }
 }
