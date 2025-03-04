@@ -10,7 +10,6 @@ if (is_logged_in()) {
 
 $errors = [];
 
-// Process login form
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $email = filter_input(INPUT_POST, 'email', FILTER_SANITIZE_EMAIL);
     $password = $_POST['password'] ?? '';
@@ -24,14 +23,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $user = $stmt->fetch(PDO::FETCH_ASSOC);
         
         if ($user && password_verify($password, $user['password_hash'])) {
-            // Login successful
             $_SESSION['user_id'] = $user['user_id'];
             
-            // Update last login time
             $updateStmt = $db->prepare("UPDATE users SET last_login = CURRENT_TIMESTAMP WHERE user_id = ?");
             $updateStmt->execute([$user['user_id']]);
             
-            // Redirect to appropriate page
             $redirect = $_SESSION['redirect_after_login'] ?? 'dashboard.php';
             unset($_SESSION['redirect_after_login']);
             

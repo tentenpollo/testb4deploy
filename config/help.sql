@@ -56,7 +56,7 @@ CREATE TABLE teams (
 CREATE TABLE team_categories (
     team_id INTEGER REFERENCES teams(team_id) NOT NULL,
     category_id INTEGER REFERENCES categories(category_id) NOT NULL,
-    is_primary BOOLEAN DEFAULT FALSE,  -- Whether this team is the primary owner of this category
+    is_primary BOOLEAN DEFAULT FALSE,
     PRIMARY KEY (team_id, category_id)
 );
 
@@ -239,6 +239,33 @@ CREATE TABLE category_solutions (
     updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     is_active BOOLEAN DEFAULT TRUE
 );
+
+-- Create a roles table
+CREATE TABLE roles (
+    role_id SERIAL PRIMARY KEY,
+    name VARCHAR(50) NOT NULL UNIQUE,
+    description TEXT,
+    is_active BOOLEAN DEFAULT TRUE
+);
+
+-- Insert the required roles
+INSERT INTO roles (name, description) VALUES
+    ('admin', 'System administrator with full access'),
+    ('master_agent', 'Senior agent with supervisory capabilities'),
+    ('agent', 'Regular support agent'),
+    ('user', 'Regular system user');
+
+-- Add role assignments for staff members
+CREATE TABLE staff_roles (
+    staff_id INTEGER REFERENCES staff(staff_id) NOT NULL,
+    role_id INTEGER REFERENCES roles(role_id) NOT NULL,
+    assigned_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    assigned_by INTEGER REFERENCES staff(staff_id),
+    PRIMARY KEY (staff_id, role_id)
+);
+
+-- For regular users, add a role_id field to the users table
+ALTER TABLE users ADD COLUMN role_id INTEGER REFERENCES roles(role_id) DEFAULT 4; -- Default to 'user' role
 
 -- Create indexes for better performance
 CREATE INDEX idx_tickets_registered_user ON tickets(registered_user_id);

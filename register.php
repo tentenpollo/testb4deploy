@@ -11,7 +11,6 @@ if (is_logged_in()) {
 $errors = [];
 $success = false;
 
-// Process registration form
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $email = filter_input(INPUT_POST, 'email', FILTER_SANITIZE_EMAIL);
     $password = $_POST['password'] ?? '';
