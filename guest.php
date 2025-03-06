@@ -2,6 +2,7 @@
 require_once 'includes/config.php';
 require_once 'includes/functions.php';
 
+// If user is already logged in or is a guest, redirect to create ticket page
 if (is_logged_in() || is_guest()) {
     header("Location: create_ticket.php");
     exit;
@@ -53,6 +54,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             
             $_SESSION['guest_id'] = $mysqli->insert_id;
             $_SESSION['guest_token'] = $token;
+            $_SESSION['guest_email'] = $email; // Store the email in session
             
             // Redirect to create ticket page
             header("Location: create_ticket.php");

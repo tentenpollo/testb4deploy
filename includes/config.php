@@ -1,5 +1,10 @@
 <?php
-// config.php - Database configuration
+ob_start(); 
+if (headers_sent($file, $line)) {
+    die("Headers already sent in $file on line $line");
+}
+session_start();
+
 define('DB_HOST', 'localhost');
 define('DB_NAME', 'ticketing_system');
 define('DB_USER', 'root');
@@ -26,8 +31,6 @@ function db_connect() {
     
     return $mysqli;
 }
-
-session_start();
 
 function is_logged_in() {
     return isset($_SESSION['user_id']);
