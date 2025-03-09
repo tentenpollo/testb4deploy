@@ -215,7 +215,7 @@ require_once '../includes/config.php';
             <!-- Include Tickets Content -->
             <?php include 'tickets_content.php'; ?>
             <?php include 'staff_management.php'; ?>
-            <!-- Add other content sections here (Users, Reports, etc) using same pattern -->
+            <?php include 'priorities.php'; ?>
         </main>
     </div>
 </body>
