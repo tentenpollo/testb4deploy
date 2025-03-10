@@ -43,7 +43,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $errors[] = "Last name is required";
     }
 
-    // Check if email already exists
     if (empty($errors)) {
         $db = db_connect();
         $email_escaped = $db->real_escape_string($email);
