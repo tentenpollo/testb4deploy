@@ -206,7 +206,6 @@ require_once '../includes/config.php';
         <!-- Main Content Area with rounded corners -->
         <main class="flex-1 scrollable-content bg-white rounded-content main-content shadow-sm"
             :class="{ 'collapsed': !sidebarOpen }">
-            <!-- Conditionally include content based on active view -->
             <div x-show="activeView === 'tickets'">
                 <?php include 'tickets_content.php'; ?>
             </div>

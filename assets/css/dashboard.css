@@ -16,7 +16,6 @@
             transition: all 0.2s ease-in-out;
         }
 
-        /* Update these CSS rules */
         .scrollable-content {
             height: calc(100vh - 64px);
             overflow-y: auto;
@@ -27,12 +26,14 @@
             border-top-left-radius: 30px;
         }
 
-        /* Add this to ensure content can scroll */
         .main-content {
             margin-left: 16rem;
+            min-height: 300px !important;
             z-index: 30;
             overflow-y: auto;
+            position: relative;
             height: calc(100vh - 64px);
+            padding-bottom: 20px;
         }
 
         .main-content.collapsed {
