@@ -249,17 +249,16 @@ function getAllTickets()
     return $tickets;
 }
 
-// Get All Priorities
 function getAllPriorities()
 {
     $mysqli = db_connect();
 
-    $sql = "SELECT id, name FROM priorities ORDER BY id";
+    $sql = "SELECT id, name, level, created_at, updated_at FROM priorities ORDER BY level ASC";
     $result = $mysqli->query($sql);
 
     $priorities = [];
-    if ($result->num_rows > 0) {
-        while ($row = $result->fetch_assoc()) {
+    if (mysqli_num_rows($result) > 0) {
+        while ($row = mysqli_fetch_assoc($result)) {
             $priorities[] = $row;
         }
     }
@@ -267,7 +266,7 @@ function getAllPriorities()
     return $priorities;
 }
 
-// Get All Categories
+
 function getAllCategories()
 {
     $mysqli = db_connect();
@@ -492,34 +491,35 @@ function getRecentTickets($limit = 5)
     return $recent_tickets;
 }
 
-function getSubcategoryId($subcategoryName) {
+function getSubcategoryId($subcategoryName)
+{
     $db = db_connect();
     $stmt = $db->prepare("SELECT id FROM subcategories WHERE name = ?");
-    
+
     if ($stmt === false) {
         error_log("Database error in getSubcategoryId: " . $db->error);
         return null;
     }
-    
+
     if ($stmt->execute([$subcategoryName])) {
         $result = $stmt->get_result();
         if ($row = $result->fetch_assoc()) {
             return $row['id'];
         }
     }
-    
+
     // If subcategory doesn't exist, create it
     $insertStmt = $db->prepare("INSERT INTO subcategories (name, created_at, updated_at) VALUES (?, NOW(), NOW())");
-    
+
     if ($insertStmt === false) {
         error_log("Database error when creating subcategory: " . $db->error);
         return null;
     }
-    
+
     if ($insertStmt->execute([$subcategoryName])) {
         return $db->insert_id;
     }
-    
+
     return null;
 }
 
@@ -529,7 +529,8 @@ function getSubcategoryId($subcategoryName) {
  * @param string $subcategoryName Name of the subcategory
  * @return int Priority ID (1=Low, 2=Medium, 3=High)
  */
-function getPriorityId($subcategoryName) {
+function getPriorityId($subcategoryName)
+{
     // Define priority mappings for specific subcategories
     $priorityMap = [
         // High priority subcategories
@@ -540,6 +541,6 @@ function getPriorityId($subcategoryName) {
         'Refund Request' => 2,
         // All others default to 1 (low priority)
     ];
-    
+
     return $priorityMap[$subcategoryName] ?? 1; // Default to low priority (1) if not found
 }

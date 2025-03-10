@@ -1,8 +1,7 @@
 <?php
 require_once 'includes/config.php';
 require_once 'includes/functions.php';
-
-// Check if already logged in
+    
 if (is_logged_in()) {
     header("Location: dashboard.php");
     exit;

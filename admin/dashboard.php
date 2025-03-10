@@ -74,7 +74,7 @@ require_once '../includes/config.php';
                         <p class="text-xs text-gray-500 mt-1">
                             <?php echo ucfirst(str_replace('_', ' ', htmlspecialchars($_SESSION['staff_role'] ?? 'Role'))); ?>
                         </p>
-                        
+
                     </div>
 
                     <!-- Menu Items -->
@@ -96,17 +96,12 @@ require_once '../includes/config.php';
         </div>
     </nav>
 
-    <!-- Main Content -->
     <div class="flex pt-16">
-        <!-- Sidebar -->
         <aside class="navy-bg w-64 h-screen fixed flex flex-col sidebar-transition z-40"
             :class="{ 'w-20': !sidebarOpen }">
-            <!-- Sidebar Content -->
             <div class="p-4 flex-1">
 
-                <!-- Navigation Items -->
                 <nav class="space-y-2">
-                    <!-- Tickets -->
                     <button @click="activeView = 'tickets'"
                         class="w-full flex items-center space-x-3 px-3 py-2 rounded-lg text-white hover:bg-white/10 nav-item"
                         :class="{ 'active': activeView === 'tickets' }">
@@ -114,7 +109,6 @@ require_once '../includes/config.php';
                         <span :class="{ 'hidden': !sidebarOpen }">Tickets</span>
                     </button>
 
-                    <!-- Users/Agents (with Submenu) -->
                     <div>
                         <button @click="openSubmenu = openSubmenu === 'users' ? '' : 'users'"
                             class="w-full flex items-center space-x-3 px-3 py-2 rounded-lg text-white hover:bg-white/10 nav-item"
@@ -212,10 +206,22 @@ require_once '../includes/config.php';
         <!-- Main Content Area with rounded corners -->
         <main class="flex-1 scrollable-content bg-white rounded-content main-content shadow-sm"
             :class="{ 'collapsed': !sidebarOpen }">
-            <!-- Include Tickets Content -->
-            <?php include 'tickets_content.php'; ?>
-            <?php include 'staff_management.php'; ?>
-            <?php include 'priorities.php'; ?>
+            <!-- Conditionally include content based on active view -->
+            <div x-show="activeView === 'tickets'">
+                <?php include 'tickets_content.php'; ?>
+            </div>
+            <div x-show="activeView === 'staff-management'">
+                <?php include 'staff_management.php'; ?>
+            </div>
+            <div x-show="activeView === 'priorities'">
+                <?php include 'priorities.php'; ?>
+            </div>
+            <div x-show="activeView === 'categories'">
+                <?php include 'categories.php'; ?>
+            </div>
+            <div x-show="activeView === 'reports'">
+                <?php include 'reports.php'; ?>
+            </div>
         </main>
     </div>
 </body>

@@ -16,20 +16,27 @@
             transition: all 0.2s ease-in-out;
         }
 
+        /* Update these CSS rules */
         .scrollable-content {
             height: calc(100vh - 64px);
             overflow-y: auto;
+            overflow-x: hidden;
         }
 
         .rounded-content {
             border-top-left-radius: 30px;
-            overflow: hidden;
+            /* Remove or modify this line */
+            /* overflow: hidden; */
         }
 
+        /* Add this to ensure content can scroll */
         .main-content {
             margin-left: 16rem;
             z-index: 30;
-            /* Ensure it's below the sidebar */
+            overflow-y: auto;
+            /* Add this line */
+            height: calc(100vh - 64px);
+            /* Ensure height is set */
         }
 
         .main-content.collapsed {
@@ -186,7 +193,8 @@
         }
 
         .ticket-details {
-            max-width: 600px; /* Adjust based on your layout */
+            max-width: 600px;
+            /* Adjust based on your layout */
             overflow: hidden;
         }
 
@@ -194,52 +202,64 @@
             margin-left: 4px;
             font-size: 0.7rem;
         }
-        .table-content-shadow{
+
+        .table-content-shadow {
             box-shadow: rgba(0, 0, 0, 0.15) 1.95px 1.95px 2.6px;
         }
+
         [x-cloak] {
             display: none;
         }
-        
+
         .kanban-container {
             display: flex;
             gap: 1rem;
-            height: calc(100vh - 150px); /* Adjust based on your header/footer height */
-            overflow-y: hidden; /* Prevent container scrolling */
+            height: calc(100vh - 150px);
+            /* Adjust based on your header/footer height */
+            overflow-y: hidden;
+            /* Prevent container scrolling */
         }
-        
+
         .kanban-columns {
             display: grid;
             grid-template-columns: repeat(3, 1fr);
             gap: 1rem;
             flex-grow: 1;
         }
-        
+
         .kanban-column {
             background-color: #f9fafb;
             padding: 1rem;
             border-radius: 0.5rem;
             display: flex;
             flex-direction: column;
-            height: 100%; /* Ensure columns take full height */
+            height: 100%;
+            /* Ensure columns take full height */
         }
-        
+
         .kanban-column .ticket-list {
             flex-grow: 1;
-            overflow-y: auto; /* Enable scrolling for tickets */
+            overflow-y: auto;
+            /* Enable scrolling for tickets */
         }
-        
+
         .kanban-column .pagination-controls {
-            margin-top: auto; /* Push pagination controls to the bottom */
+            margin-top: auto;
+            /* Push pagination controls to the bottom */
             padding-top: 1rem;
             border-top: 1px solid #e5e7eb;
         }
-        
+
         @keyframes fadeOut {
-            from { opacity: 1; }
-            to { opacity: 0; }
+            from {
+                opacity: 1;
+            }
+
+            to {
+                opacity: 0;
+            }
         }
-        
+
         .animate-fade-out {
             animation: fadeOut 0.5s ease-out;
         }
