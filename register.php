@@ -54,7 +54,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         }
     }
 
-    // Create user if no errors
     if (empty($errors)) {
         $db = db_connect();
         $password_hash = password_hash($password, PASSWORD_DEFAULT);
@@ -66,6 +65,22 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $username = strtolower(substr($first_name, 0, 1) . $last_name);
         $username_escaped = $db->real_escape_string($username);
         $phone_escaped = $db->real_escape_string($phone);
+
+        $base_username = $username;
+        $counter = 1;
+
+        while (true) {
+            $username_escaped = $db->real_escape_string($username);
+            $query = "SELECT user_id FROM users WHERE username = '$username_escaped'";
+            $result = $db->query($query);
+
+            if ($result && $result->num_rows > 0) {
+                $username = $base_username . $counter;
+                $counter++;
+            } else {
+                break;
+            }
+        }
 
         $query = "
             INSERT INTO users (email, password, first_name, last_name, username, phone) 

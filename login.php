@@ -28,12 +28,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $staff = $staff_result->fetch_assoc();
             
             if (password_verify($password, $staff['password'])) {
-                // Set session variables for staff
                 $_SESSION['user_id'] = $staff['id'];
                 $_SESSION['is_staff'] = true;
                 $_SESSION['staff_role'] = $staff['role'];
                 
-                // Update last login (using updated_at field for staff)
                 $staff_id_escaped = $db->real_escape_string($staff['id']);
                 $update_query = "UPDATE staff_members SET updated_at = CURRENT_TIMESTAMP() WHERE id = '$staff_id_escaped'";
                 $db->query($update_query);
