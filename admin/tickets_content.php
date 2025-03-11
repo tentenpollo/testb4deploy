@@ -32,8 +32,18 @@ $pastDueCount = count(array_filter($tickets, function ($ticket) {
 }));
 
 ?>
-
+<script src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js" defer></script>
 <script>
+    document.addEventListener('alpine:init', () => {
+        Alpine.store('ticketSystem', {
+            openTicketDetails(ticketId) {
+                // This will be our global method to open the modal
+                window.dispatchEvent(new CustomEvent('open-ticket-modal', {
+                    detail: { ticketId }
+                }));
+            }
+        });
+    });
     window.currentUserId = <?php echo json_encode($_SESSION['user_id']); ?>;
     window.staffRole = <?php echo json_encode($_SESSION['staff_role'] ?? ''); ?>;
     window.isAdmin = <?php echo json_encode($isAdmin); ?>;
@@ -50,6 +60,364 @@ $pastDueCount = count(array_filter($tickets, function ($ticket) {
         allTickets: <?php echo $allTicketsCount; ?>
     };
     window.sharedViewCounts = window.ticketCounts;
+
+    function ticketDetailsModal() {
+        console.log("INITIALIZING TICKET DETAILS MODAL");
+        return {
+            isOpen: false,
+            currentTicket: null,
+            ticketHistory: [],
+            attachments: [],
+            priorities: [],
+            assignableUsers: [],
+
+            attachments: [],
+
+            init() {
+                // Listen for the event
+                window.addEventListener('open-ticket-modal', (event) => {
+                    this.openModal(event.detail.ticketId);
+                });
+
+                console.log("Ticket modal initialized and listening for events");
+            },
+
+            async openModal(ticketId) {
+                this.isOpen = true;
+                await this.loadTicketDetails(ticketId);
+                await this.loadTicketHistory(ticketId);
+                await this.loadPriorities();
+                await this.loadAssignableUsers();
+                document.body.classList.add('overflow-hidden');
+            },
+
+            closeModal() {
+                this.isOpen = false;
+                this.currentTicket = null;
+                this.ticketHistory = [];
+                this.attachments = [];
+                document.body.classList.remove('overflow-hidden');
+            },
+
+            async loadTicketDetails(ticketId) {
+                try {
+                    const response = await fetch(`ajax/ajax_handlers.php?action=get_ticket_details&ticket_id=${ticketId}`);
+                    const data = await response.json();
+
+                    if (data.success) {
+                        this.currentTicket = data.ticket;
+                    } else {
+                        alert('Error loading ticket details: ' + data.error);
+                    }
+                } catch (error) {
+                    console.error('Failed to load ticket details:', error);
+                    alert('Failed to load ticket details. Please try again.');
+                }
+            },
+
+            async loadTicketHistory(ticketId) {
+                try {
+                    const response = await fetch(`ajax/ajax_handlers.php?action=get_ticket_history&ticket_id=${ticketId}`);
+                    const data = await response.json();
+
+                    if (data.success) {
+                        this.ticketHistory = data.history;
+                    } else {
+                        alert('Error loading ticket history: ' + data.error);
+                    }
+                } catch (error) {
+                    console.error('Failed to load ticket history:', error);
+                    alert('Failed to load ticket history. Please try again.');
+                }
+            },
+
+            async loadPriorities() {
+                try {
+                    const response = await fetch('ajax/ajax_handlers.php?action=get_priorities');
+                    const data = await response.json();
+
+                    if (data.success) {
+                        this.priorities = data.priorities;
+                    }
+                } catch (error) {
+                    console.error('Failed to load priorities:', error);
+                }
+            },
+
+            async loadAssignableUsers() {
+                try {
+                    const response = await fetch('ajax/ajax_handlers.php?action=get_assignable_users');
+                    const data = await response.json();
+
+                    if (data.success) {
+                        this.assignableUsers = data.users;
+                    }
+                } catch (error) {
+                    console.error('Failed to load assignable users:', error);
+                }
+            },
+
+            async updateStatus(newStatus) {
+                if (!this.currentTicket) return;
+
+                try {
+                    const formData = new FormData();
+                    formData.append('ticket_id', this.currentTicket.id);
+                    formData.append('status', newStatus);
+
+                    const response = await fetch('ajax/ajax_handlers.php?action=update_ticket_status', {
+                        method: 'POST',
+                        body: formData
+                    });
+
+                    const data = await response.json();
+
+                    if (data.success) {
+                        this.currentTicket.status = newStatus;
+                        await this.loadTicketHistory(this.currentTicket.id);
+                        alert('Status updated successfully');
+                    } else {
+                        alert('Error updating status: ' + data.error);
+                    }
+                } catch (error) {
+                    console.error('Failed to update status:', error);
+                    alert('Failed to update status. Please try again.');
+                }
+            },
+
+            async updatePriority(newPriorityId) {
+                if (!this.currentTicket) return;
+
+                try {
+                    const formData = new FormData();
+                    formData.append('ticket_id', this.currentTicket.id);
+                    formData.append('priority_id', newPriorityId);
+
+                    const response = await fetch('ajax/ajax_handlers.php?action=update_ticket_priority', {
+                        method: 'POST',
+                        body: formData
+                    });
+
+                    const data = await response.json();
+
+                    if (data.success) {
+                        // Update the local priority name from the priorities array
+                        const priority = this.priorities.find(p => p.id === newPriorityId);
+                        this.currentTicket.priority_id = newPriorityId;
+                        this.currentTicket.priority_name = priority ? priority.name : 'Unknown';
+                        await this.loadTicketHistory(this.currentTicket.id);
+                        alert('Priority updated successfully');
+                    } else {
+                        alert('Error updating priority: ' + data.error);
+                    }
+                } catch (error) {
+                    console.error('Failed to update priority:', error);
+                    alert('Failed to update priority. Please try again.');
+                }
+            },
+
+            async assignTicket(assigneeId) {
+                if (!this.currentTicket) return;
+
+                try {
+                    const formData = new FormData();
+                    formData.append('ticket_id', this.currentTicket.id);
+                    formData.append('assignee_id', assigneeId);
+
+                    const response = await fetch('ajax/ajax_handlers.php?action=assign_ticket', {
+                        method: 'POST',
+                        body: formData
+                    });
+
+                    const data = await response.json();
+
+                    if (data.success) {
+                        // Update the local assignee name from the assignable users array
+                        const assignee = this.assignableUsers.find(u => u.id === assigneeId);
+                        this.currentTicket.assigned_to = assigneeId;
+                        this.currentTicket.assigned_to_name = assignee ? assignee.name : 'Unassigned';
+                        await this.loadTicketHistory(this.currentTicket.id);
+                        alert('Ticket assigned successfully');
+                    } else {
+                        alert('Error assigning ticket: ' + data.error);
+                    }
+                } catch (error) {
+                    console.error('Failed to assign ticket:', error);
+                    alert('Failed to assign ticket. Please try again.');
+                }
+            },
+
+            async addComment(isPrivate = false) {
+                if (!this.currentTicket) return;
+
+                const commentContent = this.$refs.commentEditor.innerHTML;
+
+                if (!commentContent.trim()) {
+                    alert('Please enter a comment');
+                    return;
+                }
+
+                try {
+                    const formData = new FormData();
+                    formData.append('ticket_id', this.currentTicket.id);
+                    formData.append('content', commentContent);
+                    formData.append('is_private', isPrivate ? 1 : 0);
+
+                    const response = await fetch('ajax/ajax_handlers.php?action=add_comment', {
+                        method: 'POST',
+                        body: formData
+                    });
+
+                    const data = await response.json();
+
+                    if (data.success) {
+                        // Clear the editor
+                        this.$refs.commentEditor.innerHTML = '';
+                        // Clear any attachments
+                        this.attachments = [];
+                        // Reload ticket history
+                        await this.loadTicketHistory(this.currentTicket.id);
+                        alert('Comment added successfully');
+                    } else {
+                        alert('Error adding comment: ' + data.error);
+                    }
+                } catch (error) {
+                    console.error('Failed to add comment:', error);
+                    alert('Failed to add comment. Please try again.');
+                }
+            },
+
+            async archiveTicket() {
+                if (!this.currentTicket) return;
+
+                if (!confirm('Are you sure you want to archive this ticket?')) {
+                    return;
+                }
+
+                try {
+                    const formData = new FormData();
+                    formData.append('ticket_id', this.currentTicket.id);
+
+                    const response = await fetch('ajax/ajax_handlers.php?action=archive_ticket', {
+                        method: 'POST',
+                        body: formData
+                    });
+
+                    const data = await response.json();
+
+                    if (data.success) {
+                        alert('Ticket archived successfully');
+                        this.closeModal();
+                        // Reload the ticket list if there's a callback for it
+                        if (typeof loadTickets === 'function') {
+                            loadTickets();
+                        }
+                    } else {
+                        alert('Error archiving ticket: ' + data.error);
+                    }
+                } catch (error) {
+                    console.error('Failed to archive ticket:', error);
+                    alert('Failed to archive ticket. Please try again.');
+                }
+            },
+
+            formatDate(dateString) {
+                if (!dateString) return 'N/A';
+                const date = new Date(dateString);
+                return date.toLocaleString();
+            },
+
+            // Rich text editor functions
+            formatText(command) {
+                switch (command) {
+                    case 'bold':
+                        document.execCommand('bold', false, null);
+                        break;
+                    case 'italic':
+                        document.execCommand('italic', false, null);
+                        break;
+                    case 'underline':
+                        document.execCommand('underline', false, null);
+                        break;
+                    case 'link':
+                        const url = prompt('Enter the URL:');
+                        if (url) {
+                            document.execCommand('createLink', false, url);
+                        }
+                        break;
+                    case 'heading':
+                        document.execCommand('formatBlock', false, '<h3>');
+                        break;
+                    case 'list-ul':
+                        document.execCommand('insertUnorderedList', false, null);
+                        break;
+                    case 'list-ol':
+                        document.execCommand('insertOrderedList', false, null);
+                        break;
+                }
+                // Focus back on the editor
+                this.$refs.commentEditor.focus();
+            },
+
+            async addAttachment() {
+                // Create a file input element
+                const fileInput = document.createElement('input');
+                fileInput.type = 'file';
+                fileInput.multiple = false;
+
+                // Handle file selection
+                fileInput.onchange = async (e) => {
+                    if (e.target.files.length === 0) return;
+
+                    const file = e.target.files[0];
+
+                    // Add to local attachments array for preview
+                    this.attachments.push({
+                        name: file.name,
+                        size: file.size,
+                        file: file // Keep the file object for upload
+                    });
+
+                    // If we want to upload immediately:
+                    if (this.currentTicket) {
+                        await this.uploadAttachment(file);
+                    }
+                };
+
+                // Trigger the file selection dialog
+                fileInput.click();
+            },
+
+            async uploadAttachment(file) {
+                try {
+                    const formData = new FormData();
+                    formData.append('attachment', file);
+                    formData.append('ticket_id', this.currentTicket.id);
+
+                    const response = await fetch('ajax/ajax_handlers.php', {
+                        method: 'POST',
+                        body: formData
+                    });
+
+                    const data = await response.json();
+
+                    if (data.success) {
+                        // Reload ticket history to show the new attachment
+                        await this.loadTicketHistory(this.currentTicket.id);
+                    } else {
+                        alert('Error uploading attachment: ' + data.error);
+                    }
+                } catch (error) {
+                    console.error('Failed to upload attachment:', error);
+                    alert('Failed to upload attachment. Please try again.');
+                }
+            },
+
+            removeAttachment(index) {
+                this.attachments.splice(index, 1);
+            }
+        };
+    }
 
     function ticketTable() {
         return {
@@ -289,15 +657,14 @@ $pastDueCount = count(array_filter($tickets, function ($ticket) {
                 if (hours > 0) return `${hours} hour${hours > 1 ? 's' : ''} ago`;
                 if (minutes > 0) return `${minutes} minute${minutes > 1 ? 's' : ''} ago`;
                 return 'just now';
-            }
+            },
+
+            openTicketDetailsModal(ticketId) {
+                Alpine.store('ticketSystem').openTicketDetails(ticketId);
+            },
         };
     }
 </script>
-
-<head>
-    <script src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js" defer></script>
-</head>
-
 
 <div x-show="activeView === 'tickets'" class="flex gap-6" x-data="{ 
     isViewsSidebarOpen: true, 
@@ -456,10 +823,10 @@ $pastDueCount = count(array_filter($tickets, function ($ticket) {
                                     <p><strong>Category:</strong> <span x-text="ticket.category_name"></span></p>
                                     <p><strong>Priority:</strong>
                                         <span class="px-2 py-1 rounded text-sm" :class="{
-                            'bg-red-500 text-white': ticket.priority_name === 'High',
-                            'bg-yellow-500 text-white': ticket.priority_name === 'Medium',
-                            'bg-green-500 text-white': ticket.priority_name === 'Low'
-                            }" x-text="ticket.priority_name"></span>
+                    'bg-red-500 text-white': ticket.priority_name === 'High',
+                    'bg-yellow-500 text-white': ticket.priority_name === 'Medium',
+                    'bg-green-500 text-white': ticket.priority_name === 'Low'
+                }" x-text="ticket.priority_name"></span>
                                     </p>
                                     <p><strong>Created:</strong> <span x-text="formatDate(ticket.created_at)"></span>
                                     </p>
@@ -487,8 +854,7 @@ $pastDueCount = count(array_filter($tickets, function ($ticket) {
                                                     class="w-full border rounded px-3 py-2 text-sm">
                                                     <option value="">Select Category</option>
                                                     <template x-for="category in categories" :key="category.id">
-                                                        <option :value="category.id" x-text="category.name">
-                                                        </option>
+                                                        <option :value="category.id" x-text="category.name"></option>
                                                     </template>
                                                 </select>
                                             </div>
@@ -506,7 +872,6 @@ $pastDueCount = count(array_filter($tickets, function ($ticket) {
                                                 </select>
                                             </div>
 
-                                            <!-- Priority Dropdown -->
                                             <div>
                                                 <label
                                                     class="block text-sm font-medium text-gray-700 mb-1">Priority</label>
@@ -514,21 +879,21 @@ $pastDueCount = count(array_filter($tickets, function ($ticket) {
                                                     class="w-full border rounded px-3 py-2 text-sm">
                                                     <option value="">Select Priority</option>
                                                     <template x-for="priority in priorities" :key="priority.id">
-                                                        <option :value="priority.id" x-text="priority.name">
-                                                        </option>
+                                                        <option :value="priority.id" x-text="priority.name"></option>
                                                     </template>
                                                 </select>
                                             </div>
 
-                                            <!-- Update and Delete Buttons -->
+                                            <!-- Update and View Details Buttons -->
                                             <div class="flex space-x-2">
                                                 <button @click="updateTicket(ticket.id, ticket)"
                                                     class="flex-1 bg-blue-500 text-white py-2 rounded hover:bg-blue-600">
                                                     Update
                                                 </button>
-                                                <button @click="deleteTicket(ticket.id)"
-                                                    class="flex-1 bg-red-500 text-white py-2 rounded hover:bg-red-600">
-                                                    Delete
+                                                <!-- Replace Delete Button with View Details Button -->
+                                                <button @click="openTicketDetailsModal(ticket.id)"
+                                                    class="flex-1 bg-green-500 text-white py-2 rounded hover:bg-green-600">
+                                                    View Details
                                                 </button>
                                             </div>
                                         </div>
@@ -789,6 +1154,322 @@ $pastDueCount = count(array_filter($tickets, function ($ticket) {
                         class="px-4 py-2 bg-gray-200 rounded">
                         Next
                     </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div x-data="ticketDetailsModal()" x-show="isOpen" class="fixed inset-0 z-50 overflow-y-auto" x-cloak>
+        <div class="flex items-center justify-center min-h-screen p-4">
+            <!-- Modal Backdrop -->
+            <div x-show="isOpen" x-transition:enter="transition ease-out duration-300"
+                x-transition:enter-start="opacity-0" x-transition:enter-end="opacity-100"
+                x-transition:leave="transition ease-in duration-200" x-transition:leave-start="opacity-100"
+                x-transition:leave-end="opacity-0" @click="closeModal()" class="fixed inset-0 bg-black bg-opacity-50">
+            </div>
+
+            <!-- Modal Content -->
+            <div x-show="isOpen" x-transition:enter="transition ease-out duration-300"
+                x-transition:enter-start="opacity-0 transform scale-95"
+                x-transition:enter-end="opacity-100 transform scale-100"
+                x-transition:leave="transition ease-in duration-200"
+                x-transition:leave-start="opacity-100 transform scale-100"
+                x-transition:leave-end="opacity-0 transform scale-95"
+                class="relative bg-white rounded-lg shadow-xl w-full max-w-5xl mx-auto max-h-[90vh] overflow-y-auto">
+
+                <div class="flex justify-between items-center p-4 border-b border-gray-200 sticky top-0 bg-white z-10">
+                    <h2 class="text-xl font-bold text-gray-800" x-text="'Ticket #' + (currentTicket?.id || '')"></h2>
+                    <div class="flex items-center space-x-4">
+                        <button @click="archiveTicket()"
+                            class="bg-amber-500 hover:bg-amber-600 text-white px-4 py-2 rounded">
+                            <i class="fas fa-archive mr-2"></i>Archive
+                        </button>
+                        <button @click="closeModal()" class="text-gray-500 hover:text-gray-700">
+                            <i class="fas fa-times text-xl"></i>
+                        </button>
+                    </div>
+                </div>
+
+                <div class="p-6 grid grid-cols-3 gap-6">
+                    <!-- Left Column - Ticket Details -->
+                    <div class="col-span-2 space-y-6">
+                        <!-- Ticket Info -->
+                        <div class="bg-gray-50 p-4 rounded-lg">
+                            <h3 class="text-lg font-semibold mb-2" x-text="currentTicket?.title || 'Loading...'"></h3>
+                            <div class="grid grid-cols-2 gap-4 mb-4">
+                                <div>
+                                    <p class="text-sm text-gray-600"><strong>Created:</strong> <span
+                                            x-text="formatDate(currentTicket?.created_at)"></span></p>
+                                    <p class="text-sm text-gray-600"><strong>Status:</strong> <span
+                                            x-text="currentTicket?.status || 'Unknown'"></span></p>
+                                    <p class="text-sm text-gray-600"><strong>Priority:</strong> <span
+                                            x-text="currentTicket?.priority_name || 'Unknown'"></span></p>
+                                </div>
+                                <div>
+                                    <p class="text-sm text-gray-600"><strong>Category:</strong> <span
+                                            x-text="currentTicket?.category_name || 'Unknown'"></span></p>
+                                    <p class="text-sm text-gray-600"><strong>Assigned To:</strong> <span
+                                            x-text="currentTicket?.assigned_to_name || 'Unassigned'"></span></p>
+                                    <p class="text-sm text-gray-600"><strong>Created By:</strong> <span
+                                            x-text="currentTicket?.created_by_name || 'Unknown'"></span></p>
+                                </div>
+                            </div>
+                            <div>
+                                <h4 class="font-medium mb-1">Description:</h4>
+                                <div class="p-3 bg-white rounded border border-gray-200 text-sm"
+                                    x-html="currentTicket?.description || 'No description provided.'"></div>
+                            </div>
+                        </div>
+
+                        <!-- Ticket Activity Timeline -->
+                        <div>
+                            <h3 class="text-lg font-semibold mb-4">Activity & Comments</h3>
+                            <div class="space-y-4">
+                                <template x-for="(activity, index) in ticketHistory" :key="index">
+                                    <div class="p-4 border border-gray-200 rounded-lg">
+                                        <div class="flex justify-between items-start">
+                                            <div class="flex items-center">
+                                                <div
+                                                    class="w-10 h-10 rounded-full bg-blue-100 flex items-center justify-center mr-3">
+                                                    <span class="font-semibold text-blue-700"
+                                                        x-text="activity.user_name?.charAt(0) || 'U'"></span>
+                                                </div>
+                                                <div>
+                                                    <p class="font-medium"
+                                                        x-text="activity.user_name || 'Unknown User'"></p>
+                                                    <p class="text-xs text-gray-500"
+                                                        x-text="formatDate(activity.created_at)"></p>
+                                                </div>
+                                            </div>
+                                            <div>
+                                                <span class="text-xs px-2 py-1 rounded" :class="{
+                                                    'bg-purple-100 text-purple-800': activity.type === 'comment',
+                                                    'bg-blue-100 text-blue-800': activity.type === 'status_change',
+                                                    'bg-green-100 text-green-800': activity.type === 'assignment',
+                                                    'bg-yellow-100 text-yellow-800': activity.type === 'attachment',
+                                                    'bg-orange-100 text-orange-800': activity.type === 'priority_change',
+                                                    'bg-red-100 text-red-800': activity.type === 'archive'
+                                                }" x-text="activity.type.replace('_', ' ')"></span>
+                                            </div>
+                                        </div>
+
+                                        <!-- Comment content -->
+                                        <div class="mt-3 email-content bg-gray-50 p-3 rounded"
+                                            x-show="activity.type === 'comment'" x-html="activity.content"></div>
+
+                                        <!-- Status change -->
+                                        <div class="mt-3 text-gray-700" x-show="activity.type === 'status_change'">
+                                            Changed status from <span class="font-medium"
+                                                x-text="activity.old_value"></span> to
+                                            <span class="font-medium" x-text="activity.new_value"></span>
+                                        </div>
+
+                                        <!-- Priority change -->
+                                        <div class="mt-3 text-gray-700" x-show="activity.type === 'priority_change'">
+                                            Changed priority from <span class="font-medium"
+                                                x-text="activity.old_value"></span> to
+                                            <span class="font-medium" x-text="activity.new_value"></span>
+                                        </div>
+
+                                        <!-- Assignment -->
+                                        <div class="mt-3 text-gray-700" x-show="activity.type === 'assignment'">
+                                            Assigned ticket to <span class="font-medium"
+                                                x-text="activity.new_value"></span>
+                                        </div>
+
+                                        <!-- Attachment -->
+                                        <div class="mt-3" x-show="activity.type === 'attachment'">
+                                            <div class="flex items-center p-2 bg-white border border-gray-200 rounded">
+                                                <i class="fas fa-paperclip mr-2 text-gray-500"></i>
+                                                <span class="text-blue-600 hover:underline cursor-pointer"
+                                                    x-text="activity.new_value"></span>
+                                            </div>
+                                        </div>
+
+                                        <!-- Archive -->
+                                        <div class="mt-3 text-gray-700" x-show="activity.type === 'archive'">
+                                            <span class="font-medium" x-text="activity.new_value"></span>
+                                        </div>
+                                    </div>
+                                </template>
+                            </div>
+                        </div>
+
+                        <!-- Add Comment Section -->
+                        <div class="bg-white border border-gray-200 rounded-lg p-4">
+                            <h3 class="text-lg font-semibold mb-2">Add Response</h3>
+
+                            <!-- Rich Text Editor Toolbar -->
+                            <div class="border border-gray-300 rounded-t-lg p-2 bg-gray-50 flex items-center space-x-2">
+                                <button @click="formatText('bold')" class="p-1 hover:bg-gray-200 rounded" title="Bold">
+                                    <i class="fas fa-bold"></i>
+                                </button>
+                                <button @click="formatText('italic')" class="p-1 hover:bg-gray-200 rounded"
+                                    title="Italic">
+                                    <i class="fas fa-italic"></i>
+                                </button>
+                                <button @click="formatText('underline')" class="p-1 hover:bg-gray-200 rounded"
+                                    title="Underline">
+                                    <i class="fas fa-underline"></i>
+                                </button>
+                                <div class="h-6 border-r border-gray-300"></div>
+                                <button @click="formatText('link')" class="p-1 hover:bg-gray-200 rounded"
+                                    title="Insert Link">
+                                    <i class="fas fa-link"></i>
+                                </button>
+                                <button @click="addAttachment()" class="p-1 hover:bg-gray-200 rounded"
+                                    title="Add Attachment">
+                                    <i class="fas fa-paperclip"></i>
+                                </button>
+                                <div class="h-6 border-r border-gray-300"></div>
+                                <button @click="formatText('heading')" class="p-1 hover:bg-gray-200 rounded"
+                                    title="Heading">
+                                    <i class="fas fa-heading"></i>
+                                </button>
+                                <button @click="formatText('list-ul')" class="p-1 hover:bg-gray-200 rounded"
+                                    title="Bullet List">
+                                    <i class="fas fa-list-ul"></i>
+                                </button>
+                                <button @click="formatText('list-ol')" class="p-1 hover:bg-gray-200 rounded"
+                                    title="Numbered List">
+                                    <i class="fas fa-list-ol"></i>
+                                </button>
+                            </div>
+
+                            <!-- Editor -->
+                            <div class="border border-t-0 border-gray-300 rounded-b-lg p-3 min-h-[150px]"
+                                x-ref="commentEditor" contenteditable="true" placeholder="Type your response here...">
+                            </div>
+
+                            <!-- Attachments Preview -->
+                            <div x-show="attachments.length > 0" class="mt-3 space-y-2">
+                                <h4 class="text-sm font-medium">Attachments:</h4>
+                                <template x-for="(attachment, index) in attachments" :key="index">
+                                    <div class="flex items-center justify-between bg-gray-50 p-2 rounded">
+                                        <div class="flex items-center">
+                                            <i class="fas fa-file mr-2 text-gray-500"></i>
+                                            <span x-text="attachment.name"></span>
+                                        </div>
+                                        <button @click="removeAttachment(index)"
+                                            class="text-red-500 hover:text-red-700">
+                                            <i class="fas fa-times"></i>
+                                        </button>
+                                    </div>
+                                </template>
+                            </div>
+
+                            <!-- Add Comment Buttons -->
+                            <div class="mt-4 flex justify-end space-x-3">
+                                <button @click="addComment(true)"
+                                    class="bg-gray-500 hover:bg-gray-600 text-white px-4 py-2 rounded">
+                                    Internal Note
+                                </button>
+                                <button @click="addComment(false)"
+                                    class="bg-blue-500 hover:bg-blue-600 text-white px-4 py-2 rounded">
+                                    Post Reply
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Right Column - Actions & Info -->
+                    <div class="col-span-1 space-y-6">
+                        <!-- Ticket Actions -->
+                        <div class="bg-white border border-gray-200 rounded-lg p-4">
+                            <h3 class="text-lg font-semibold mb-4">Ticket Actions</h3>
+
+                            <!-- Status Update -->
+                            <div class="mb-4">
+                                <h4 class="font-medium mb-2">Update Status</h4>
+                                <div class="flex flex-wrap gap-2">
+                                    <button @click="updateStatus('Open')" class="px-3 py-1 text-sm rounded-full"
+                                        :class="currentTicket?.status === 'Open' ? 'bg-green-500 text-white' : 'bg-gray-200 hover:bg-gray-300'">
+                                        Open
+                                    </button>
+                                    <button @click="updateStatus('In Progress')" class="px-3 py-1 text-sm rounded-full"
+                                        :class="currentTicket?.status === 'In Progress' ? 'bg-blue-500 text-white' : 'bg-gray-200 hover:bg-gray-300'">
+                                        In Progress
+                                    </button>
+                                    <button @click="updateStatus('Pending')" class="px-3 py-1 text-sm rounded-full"
+                                        :class="currentTicket?.status === 'Pending' ? 'bg-yellow-500 text-white' : 'bg-gray-200 hover:bg-gray-300'">
+                                        Pending
+                                    </button>
+                                    <button @click="updateStatus('Resolved')" class="px-3 py-1 text-sm rounded-full"
+                                        :class="currentTicket?.status === 'Resolved' ? 'bg-purple-500 text-white' : 'bg-gray-200 hover:bg-gray-300'">
+                                        Resolved
+                                    </button>
+                                    <button @click="updateStatus('Closed')" class="px-3 py-1 text-sm rounded-full"
+                                        :class="currentTicket?.status === 'Closed' ? 'bg-gray-600 text-white' : 'bg-gray-200 hover:bg-gray-300'">
+                                        Closed
+                                    </button>
+                                </div>
+                            </div>
+
+                            <!-- Priority Update -->
+                            <div class="mb-4">
+                                <h4 class="font-medium mb-2">Update Priority</h4>
+                                <select @change="updatePriority($event.target.value)"
+                                    class="w-full p-2 border border-gray-300 rounded"
+                                    :value="currentTicket?.priority_id">
+                                    <template x-for="priority in priorities" :key="priority.id">
+                                        <option :value="priority.id" x-text="priority.name"></option>
+                                    </template>
+                                </select>
+                            </div>
+
+                            <!-- Assign Ticket -->
+                            <div>
+                                <h4 class="font-medium mb-2">Assign To</h4>
+                                <select @change="assignTicket($event.target.value)"
+                                    class="w-full p-2 border border-gray-300 rounded"
+                                    :value="currentTicket?.assigned_to">
+                                    <option value="">-- Unassigned --</option>
+                                    <template x-for="user in assignableUsers" :key="user.id">
+                                        <option :value="user.id" x-text="user.name"></option>
+                                    </template>
+                                </select>
+                            </div>
+                        </div>
+
+                        <!-- Ticket Attachments -->
+                        <div class="bg-white border border-gray-200 rounded-lg p-4">
+                            <h3 class="text-lg font-semibold mb-3">Attachments</h3>
+                            <button @click="addAttachment()"
+                                class="w-full flex items-center justify-center p-2 mb-3 bg-gray-100 hover:bg-gray-200 border border-dashed border-gray-300 rounded">
+                                <i class="fas fa-plus-circle mr-2"></i> Add Attachment
+                            </button>
+
+                            <!-- List of existing attachments -->
+                            <div class="space-y-2">
+                                <template
+                                    x-for="(attachment, index) in ticketHistory.filter(item => item.type === 'attachment')"
+                                    :key="index">
+                                    <div class="p-2 bg-gray-50 rounded border border-gray-200 flex items-center">
+                                        <i class="fas fa-paperclip mr-2 text-gray-500"></i>
+                                        <span class="text-sm text-blue-600 hover:underline truncate"
+                                            x-text="attachment.new_value"></span>
+                                    </div>
+                                </template>
+                                <div x-show="!ticketHistory.some(item => item.type === 'attachment')"
+                                    class="text-gray-500 text-sm text-center py-2">
+                                    No attachments
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Related Information -->
+                        <div class="bg-white border border-gray-200 rounded-lg p-4">
+                            <h3 class="text-lg font-semibold mb-3">Additional Information</h3>
+                            <div class="space-y-2 text-sm">
+                                <p><strong>Last Updated:</strong> <span
+                                        x-text="formatDate(currentTicket?.updated_at)"></span></p>
+                                <p><strong>SLA Status:</strong> <span class="text-green-600">Within SLA</span></p>
+                                <p><strong>Department:</strong> <span
+                                        x-text="currentTicket?.department || 'N/A'"></span></p>
+                                <p><strong>Product:</strong> <span x-text="currentTicket?.product || 'N/A'"></span></p>
+                            </div>
+                        </div>
+                    </div>
                 </div>
             </div>
         </div>
