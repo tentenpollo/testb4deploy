@@ -1,12 +1,20 @@
 <?php
+header('Content-Type: application/json');
+
+ini_set('display_errors', 0);
+error_reporting(E_ALL);
+
 require_once '../../includes/config.php';
 require_once '../ticket_functions.php';
 
+// Only start session if not already started
+if (session_status() == PHP_SESSION_NONE) {
+    session_start();
+}
 
-session_start();
 if (!isset($_SESSION['user_id'])) {
     http_response_code(401);
-    echo json_encode(['error' => 'Unauthorized']);
+    echo json_encode(['success' => false, 'error' => 'Unauthorized']);
     exit;
 }
 

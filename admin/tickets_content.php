@@ -74,7 +74,6 @@ $pastDueCount = count(array_filter($tickets, function ($ticket) {
             attachments: [],
 
             init() {
-                // Listen for the event
                 window.addEventListener('open-ticket-modal', (event) => {
                     this.openModal(event.detail.ticketId);
                 });
@@ -83,6 +82,7 @@ $pastDueCount = count(array_filter($tickets, function ($ticket) {
             },
 
             async openModal(ticketId) {
+                console.log("Opening modal for ticket ID:", ticketId)
                 this.isOpen = true;
                 await this.loadTicketDetails(ticketId);
                 await this.loadTicketHistory(ticketId);
@@ -100,14 +100,22 @@ $pastDueCount = count(array_filter($tickets, function ($ticket) {
             },
 
             async loadTicketDetails(ticketId) {
+                console.log("Loading ticket details for ticket ID:", ticketId); // Debugging statement
                 try {
                     const response = await fetch(`ajax/ajax_handlers.php?action=get_ticket_details&ticket_id=${ticketId}`);
-                    const data = await response.json();
+                    const text = await response.text();
+                    console.log('Raw response:', text);
 
-                    if (data.success) {
-                        this.currentTicket = data.ticket;
-                    } else {
-                        alert('Error loading ticket details: ' + data.error);
+                    try {
+                        const data = JSON.parse(text);
+                        if (data.success) {
+                            this.currentTicket = data.ticket;
+                        } else {
+                            alert('Error loading ticket details: ' + data.error);
+                        }
+                    } catch (jsonError) {
+                        console.error('JSON parse error:', jsonError);
+                        alert('Invalid response format from server');
                     }
                 } catch (error) {
                     console.error('Failed to load ticket details:', error);
