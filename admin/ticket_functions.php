@@ -302,7 +302,7 @@ function get_assignable_users()
 {
     $db = db_connect();
 
-    $query = "SELECT id, name FROM users WHERE role = 'staff' OR role = 'admin' ORDER BY name";
+    $query = "SELECT id, name FROM staff_members WHERE role = 'agent' OR role = 'admin' OR role = 'master_agent' ORDER BY name";
     $result = $db->query($query);
 
     $users = [];
@@ -314,4 +314,348 @@ function get_assignable_users()
 
     return $users;
 }
-?>
+
+function get_all_tickets($filters = [])
+{
+    $tickets = [];
+
+    try {
+        $db = db_connect();
+
+        if (!$db) {
+            error_log("Failed to connect to the database");
+            return ['error' => 'Database connection failed', 'tickets' => []];
+        }
+
+        // Start with base query
+        $query = "SELECT t.*, 
+       c.name AS category_name, 
+       p.name AS priority_name, 
+       IFNULL(CONCAT(u_created.first_name, ' ', u_created.last_name), 'Guest') AS created_by_name, 
+       IFNULL(CONCAT(u_assigned.first_name, ' ', u_assigned.last_name), 'Unassigned') AS assigned_to_name, 
+       IF(t.created_by = 'guest', t.guest_email, u_created.email) AS creator_email 
+FROM tickets t 
+LEFT JOIN categories c ON t.category_id = c.id 
+LEFT JOIN priorities p ON t.priority_id = p.id 
+LEFT JOIN users u_created ON t.created_by = 'user' AND t.user_id = u_created.user_id 
+LEFT JOIN users u_assigned ON t.assigned_to = u_assigned.user_id 
+WHERE t.is_archived = 0";  // Only return non-archived tickets by default
+
+        // Validate and sanitize filters
+        if (!empty($filters)) {
+            if (isset($filters['status']) && $filters['status']) {
+                if (!in_array($filters['status'], ['open', 'in_progress', 'resolved', 'closed'])) {
+                    error_log("Invalid status filter provided: " . $filters['status']);
+                    $filters['status'] = 'open'; // Default to open if invalid
+                }
+                $status = $db->real_escape_string($filters['status']);
+                $query .= " AND t.status = '$status'";
+            }
+
+            if (isset($filters['priority_id']) && $filters['priority_id']) {
+                if (!is_numeric($filters['priority_id'])) {
+                    error_log("Invalid priority_id filter provided: " . $filters['priority_id']);
+                } else {
+                    $priority_id = $db->real_escape_string($filters['priority_id']);
+                    $query .= " AND t.priority_id = '$priority_id'";
+                }
+            }
+
+            if (isset($filters['category_id']) && $filters['category_id']) {
+                if (!is_numeric($filters['category_id'])) {
+                    error_log("Invalid category_id filter provided: " . $filters['category_id']);
+                } else {
+                    $category_id = $db->real_escape_string($filters['category_id']);
+                    $query .= " AND t.category_id = '$category_id'";
+                }
+            }
+
+            if (isset($filters['assigned_to']) && $filters['assigned_to']) {
+                if (!is_numeric($filters['assigned_to'])) {
+                    error_log("Invalid assigned_to filter provided: " . $filters['assigned_to']);
+                } else {
+                    $assigned_to = $db->real_escape_string($filters['assigned_to']);
+                    $query .= " AND t.assigned_to = '$assigned_to'";
+                }
+            }
+
+            if (isset($filters['search']) && $filters['search']) {
+                if (strlen($filters['search']) < 3) {
+                    error_log("Search term too short (minimum 3 characters): " . $filters['search']);
+                } else {
+                    $search = $db->real_escape_string($filters['search']);
+                    $query .= " AND (t.title LIKE '%$search%' OR t.description LIKE '%$search%')";
+                }
+            }
+
+            // Include archived tickets if specifically requested
+            if (isset($filters['include_archived']) && $filters['include_archived']) {
+                $query = str_replace("WHERE t.is_archived = 0", "WHERE 1=1", $query);
+            }
+
+            // Only archived tickets if specifically requested
+            if (isset($filters['only_archived']) && $filters['only_archived']) {
+                $query = str_replace("WHERE t.is_archived = 0", "WHERE t.is_archived = 1", $query);
+            }
+        }
+
+        // Default order by most recent first
+        $query .= " ORDER BY t.created_at DESC";
+
+        // Add a query limit to prevent performance issues (optional)
+        $limit = isset($filters['limit']) && is_numeric($filters['limit']) ? (int) $filters['limit'] : 500;
+        $query .= " LIMIT $limit";
+
+        error_log("Executing get_all_tickets query: " . $query);
+
+        // Set a timeout for the query
+        $db->options(MYSQLI_OPT_CONNECT_TIMEOUT, 10);
+
+        $result = $db->query($query);
+
+        if (!$result) {
+            throw new Exception("Database query error: " . $db->error);
+        }
+
+        if ($result->num_rows > 0) {
+            while ($row = $result->fetch_assoc()) {
+                $tickets[] = $row;
+            }
+            error_log("Found " . count($tickets) . " tickets");
+        } else {
+            error_log("No tickets found matching the criteria");
+        }
+
+        $result->free();
+
+    } catch (Exception $e) {
+        error_log("Exception in get_all_tickets: " . $e->getMessage());
+        return ['error' => $e->getMessage(), 'tickets' => []];
+    } finally {
+        if (isset($db) && $db) {
+            $db->close();
+        }
+    }
+
+    return $tickets;
+}
+/**
+ * Deletes a ticket from the database
+ * 
+ * @param int $ticket_id The ID of the ticket to delete
+ * @param int $user_id The ID of the user performing the deletion
+ * @return bool True if successful, false otherwise
+ */
+function delete_ticket($ticket_id, $user_id)
+{
+    $db = db_connect();
+
+    if (!$db) {
+        error_log("Failed to connect to the database");
+        return false;
+    }
+
+    // Validate inputs
+    if (!is_numeric($ticket_id) || !is_numeric($user_id)) {
+        error_log("Invalid ticket_id or user_id provided for deletion");
+        return false;
+    }
+
+    $ticket_id = $db->real_escape_string($ticket_id);
+    $user_id = $db->real_escape_string($user_id);
+
+    // Start a transaction
+    $db->begin_transaction();
+
+    try {
+        // First, log the deletion in the history table
+        $history_query = "INSERT INTO ticket_history 
+                         (ticket_id, user_id, type, new_value, created_at)
+                         VALUES 
+                         ('$ticket_id', '$user_id', 'deletion', 'Ticket deleted', NOW())";
+
+        if (!$db->query($history_query)) {
+            throw new Exception("Failed to create history record: " . $db->error);
+        }
+
+        // Then delete all attachments related to this ticket
+        $attachments_query = "SELECT file_path FROM ticket_attachments WHERE ticket_id = '$ticket_id'";
+        $attachments_result = $db->query($attachments_query);
+
+        if ($attachments_result && $attachments_result->num_rows > 0) {
+            // Delete physical files
+            while ($row = $attachments_result->fetch_assoc()) {
+                $file_path = $row['file_path'];
+                if (file_exists($file_path)) {
+                    unlink($file_path);
+                }
+            }
+
+            // Delete attachment records
+            $delete_attachments_query = "DELETE FROM ticket_attachments WHERE ticket_id = '$ticket_id'";
+            if (!$db->query($delete_attachments_query)) {
+                throw new Exception("Failed to delete attachments: " . $db->error);
+            }
+        }
+
+        // Delete the ticket
+        $delete_query = "DELETE FROM tickets WHERE id = '$ticket_id'";
+        if (!$db->query($delete_query)) {
+            throw new Exception("Failed to delete ticket: " . $db->error);
+        }
+
+        // Commit the transaction
+        $db->commit();
+        error_log("Successfully deleted ticket ID: $ticket_id");
+        return true;
+
+    } catch (Exception $e) {
+        // If anything goes wrong, roll back the transaction
+        $db->rollback();
+        error_log("Error deleting ticket: " . $e->getMessage());
+        return false;
+    }
+}
+
+/**
+ * AJAX handler for the get_all_tickets action
+ */
+function ajax_get_all_tickets()
+{
+    header('Content-Type: application/json');
+
+    try {
+        // Get filters from query parameters
+        $filters = [];
+
+        // Validate and sanitize input parameters
+        if (isset($_GET['status'])) {
+            $filters['status'] = filter_var($_GET['status'], FILTER_SANITIZE_STRING);
+        }
+
+        if (isset($_GET['priority_id'])) {
+            $filters['priority_id'] = filter_var($_GET['priority_id'], FILTER_VALIDATE_INT);
+            if ($filters['priority_id'] === false) {
+                throw new Exception("Invalid priority_id parameter");
+            }
+        }
+
+        if (isset($_GET['category_id'])) {
+            $filters['category_id'] = filter_var($_GET['category_id'], FILTER_VALIDATE_INT);
+            if ($filters['category_id'] === false) {
+                throw new Exception("Invalid category_id parameter");
+            }
+        }
+
+        if (isset($_GET['assigned_to'])) {
+            $filters['assigned_to'] = filter_var($_GET['assigned_to'], FILTER_VALIDATE_INT);
+            if ($filters['assigned_to'] === false) {
+                throw new Exception("Invalid assigned_to parameter");
+            }
+        }
+
+        if (isset($_GET['search'])) {
+            $filters['search'] = filter_var($_GET['search'], FILTER_SANITIZE_STRING);
+            if (strlen($filters['search']) < 3 && strlen($filters['search']) > 0) {
+                throw new Exception("Search term must be at least 3 characters");
+            }
+        }
+
+        if (isset($_GET['include_archived'])) {
+            $filters['include_archived'] = filter_var($_GET['include_archived'], FILTER_VALIDATE_BOOLEAN);
+        }
+
+        if (isset($_GET['only_archived'])) {
+            $filters['only_archived'] = filter_var($_GET['only_archived'], FILTER_VALIDATE_BOOLEAN);
+        }
+
+        // Add optional limit parameter
+        if (isset($_GET['limit'])) {
+            $limit = filter_var($_GET['limit'], FILTER_VALIDATE_INT);
+            if ($limit !== false && $limit > 0) {
+                $filters['limit'] = $limit;
+            }
+        }
+
+        // Execute the query
+        $result = get_all_tickets($filters);
+
+        // Check if there was an error
+        if (isset($result['error'])) {
+            echo json_encode([
+                'success' => false,
+                'error' => $result['error'],
+                'tickets' => []
+            ]);
+            exit;
+        }
+
+        // Return JSON response
+        echo json_encode([
+            'success' => true,
+            'count' => count($result),
+            'tickets' => $result
+        ]);
+
+    } catch (Exception $e) {
+        error_log("Exception in ajax_get_all_tickets: " . $e->getMessage());
+        echo json_encode([
+            'success' => false,
+            'error' => $e->getMessage(),
+            'tickets' => []
+        ]);
+    }
+
+    exit;
+}
+
+function get_current_user_id()
+{
+    return $_SESSION['staff_id'];
+}
+/**
+ * AJAX handler for the delete_ticket action
+ */
+function ajax_delete_ticket()
+{
+    /* 
+    if (!current_user_can('delete_tickets')) {
+        header('Content-Type: application/json');
+        echo json_encode([
+            'success' => false,
+            'error' => 'You do not have permission to delete tickets'
+        ]);
+        exit;
+    }
+    */
+
+
+    // Get ticket ID from request
+    if (!isset($_POST['ticket_id']) || !is_numeric($_POST['ticket_id'])) {
+        header('Content-Type: application/json');
+        echo json_encode([
+            'success' => false,
+            'error' => 'Invalid ticket ID'
+        ]);
+        exit;
+    }
+
+    $ticket_id = $_POST['ticket_id'];
+    $staff_id = get_current_user_id();
+
+    $result = delete_ticket($ticket_id, $staff_id);
+
+    header('Content-Type: application/json');
+    if ($result) {
+        echo json_encode([
+            'success' => true,
+            'message' => 'Ticket deleted successfully'
+        ]);
+    } else {
+        echo json_encode([
+            'success' => false,
+            'error' => 'Failed to delete ticket'
+        ]);
+    }
+    exit;
+}

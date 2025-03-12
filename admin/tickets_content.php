@@ -73,6 +73,13 @@ $pastDueCount = count(array_filter($tickets, function ($ticket) {
 
             attachments: [],
 
+            openTicketDetailsModal(ticketId) {
+                // Dispatch an event that the modal component is listening for
+                window.dispatchEvent(new CustomEvent('open-ticket-modal', {
+                    detail: { ticketId: ticketId }
+                }));
+            },
+
             init() {
                 window.addEventListener('open-ticket-modal', (event) => {
                     this.openModal(event.detail.ticketId);
@@ -159,6 +166,7 @@ $pastDueCount = count(array_filter($tickets, function ($ticket) {
 
                     if (data.success) {
                         this.assignableUsers = data.users;
+                        console.log(assignableUsers);
                     }
                 } catch (error) {
                     console.error('Failed to load assignable users:', error);
@@ -560,13 +568,16 @@ $pastDueCount = count(array_filter($tickets, function ($ticket) {
                 } else if (this.activeViewSection === 'high-priority') {
                     filteredTickets = filteredTickets.filter(ticket => ticket.priority_name === 'High');
                 } else if (this.activeViewSection === 'all-tickets') {
+                    // No additional filtering for all tickets
                 }
 
-                // Now, filter by ticket status
+                // Modified status filtering to group "pending" and "seen"
                 if (this.activeStatus === 'unseen') {
                     filteredTickets = filteredTickets.filter(ticket => ticket.status === 'unseen');
                 } else if (this.activeStatus === 'seen') {
-                    filteredTickets = filteredTickets.filter(ticket => ticket.status === 'seen');
+                    // Group "pending" and "seen" tickets together
+                    filteredTickets = filteredTickets.filter(ticket =>
+                        ticket.status === 'seen' || ticket.status === 'pending');
                 } else if (this.activeStatus === 'resolved') {
                     filteredTickets = filteredTickets.filter(ticket => ticket.status === 'resolved');
                 }
@@ -672,6 +683,274 @@ $pastDueCount = count(array_filter($tickets, function ($ticket) {
             },
         };
     }
+
+    function ticketsTableView() {
+        return {
+            tickets: [],
+            filteredTickets: [],
+            paginatedTickets: [],
+            isLoading: true,
+            error: null,
+
+            // Sorting
+            sortField: 'created_at',
+            sortDirection: 'desc',
+
+            // Pagination
+            currentPage: 1,
+            itemsPerPage: 10,
+            totalPages: 1,
+            pageNumbers: [],
+
+            // Filters
+            filters: {
+                status: '',
+                priority: '',
+                category: '',
+                assignedTo: '',
+                searchQuery: ''
+            },
+
+            init() {
+                this.fetchTickets();
+
+                // Set up watchers for filters to automatically refresh data
+                this.$watch('filters', () => {
+                    this.applyFilters();
+                }, { deep: true }); // Add deep: true to watch nested properties
+
+                this.$watch('currentPage', () => {
+                    this.updatePaginatedTickets();
+                });
+            },
+
+            async fetchTickets() {
+                this.isLoading = true;
+                try {
+                    const response = await fetch('ajax/ajax_handlers.php?action=get_all_tickets');
+                    const data = await response.json();
+
+                    if (data.success) {
+                        console.log("Received tickets:", data.tickets); // Debug: Check received data
+                        this.tickets = data.tickets;
+                        this.applyFilters();
+                    } else {
+                        this.error = data.error || 'Failed to load tickets';
+                        console.error('Error loading tickets:', this.error);
+                    }
+                } catch (error) {
+                    this.error = 'Network error while loading tickets';
+                    console.error('Failed to fetch tickets:', error);
+                } finally {
+                    this.isLoading = false;
+                }
+            },
+
+            // Get unique values for dropdowns
+            getUniqueValues(field) {
+                const values = this.tickets
+                    .map(ticket => ticket[field])
+                    .filter(value => value !== null && value !== undefined && value !== '');
+
+                // Remove duplicates using Set
+                return [...new Set(values)].sort();
+            },
+
+            // Reset all filters
+            resetFilters() {
+                this.filters = {
+                    status: '',
+                    priority: '',
+                    category: '',
+                    assignedTo: '',
+                    searchQuery: ''
+                };
+                // applyFilters will be triggered by the watcher
+            },
+
+            applyFilters() {
+                console.log("Starting filter with:", this.filters);
+                console.log("Before filtering, ticket count:", this.tickets.length);
+                let result = [...this.tickets];
+
+                if (this.filters.status) {
+                    console.log(`Filtering for status "${this.filters.status}"`);
+                    const beforeCount = result.length;
+                    result = result.filter(ticket => ticket.status === this.filters.status);
+                    console.log(`Status filter: ${beforeCount} -> ${result.length} tickets`);
+                }
+
+                if (this.filters.priority) {
+                    console.log(`Filtering for priority "${this.filters.priority}"`);
+                    const beforeCount = result.length;
+                    result = result.filter(ticket => ticket.priority_name === this.filters.priority);
+                    console.log(`Priority filter: ${beforeCount} -> ${result.length} tickets`);
+                }
+
+                // Apply category filter
+                if (this.filters.category) {
+                    result = result.filter(ticket => ticket.category_name === this.filters.category);
+                }
+
+                // Apply assigned to filter
+                if (this.filters.assignedTo) {
+                    result = result.filter(ticket => ticket.assigned_to_name === this.filters.assignedTo);
+                }
+
+                // Apply search query filter (across title and description)
+                if (this.filters.searchQuery) {
+                    const query = this.filters.searchQuery.toLowerCase();
+                    result = result.filter(ticket =>
+                        (ticket.title && ticket.title.toLowerCase().includes(query)) ||
+                        (ticket.description && ticket.description.toLowerCase().includes(query))
+                    );
+                }
+
+                result = this.sortTickets(result);
+
+                console.log("After filtering, ticket count:", result.length);
+
+                this.filteredTickets = result;
+
+                this.currentPage = 1;
+                this.updatePagination();
+                this.updatePaginatedTickets();
+
+                console.log("paginatedTickets count:", this.paginatedTickets.length);
+            },
+
+            sortTickets(tickets) {
+                return [...tickets].sort((a, b) => {
+                    let valueA = a[this.sortField];
+                    let valueB = b[this.sortField];
+
+                    // Handle string comparison
+                    if (typeof valueA === 'string') {
+                        valueA = valueA.toLowerCase();
+                        valueB = valueB.toLowerCase();
+                    }
+
+                    // Handle date comparison
+                    if (this.sortField === 'created_at') {
+                        valueA = new Date(valueA);
+                        valueB = new Date(valueB);
+                    }
+
+                    // Compare values
+                    if (valueA < valueB) {
+                        return this.sortDirection === 'asc' ? -1 : 1;
+                    }
+                    if (valueA > valueB) {
+                        return this.sortDirection === 'asc' ? 1 : -1;
+                    }
+                    return 0;
+                });
+            },
+
+            sortBy(field) {
+                // If clicking the same field, toggle direction
+                if (this.sortField === field) {
+                    this.sortDirection = this.sortDirection === 'asc' ? 'desc' : 'asc';
+                } else {
+                    // New field, default to ascending
+                    this.sortField = field;
+                    this.sortDirection = 'asc';
+                }
+
+                this.applyFilters();
+            },
+
+            updatePagination() {
+                this.totalPages = Math.ceil(this.filteredTickets.length / this.itemsPerPage);
+
+                // Generate page numbers to display (up to 5 pages)
+                let startPage = Math.max(1, this.currentPage - 2);
+                let endPage = Math.min(this.totalPages, startPage + 4);
+
+                if (endPage - startPage < 4 && this.totalPages > 5) {
+                    startPage = Math.max(1, endPage - 4);
+                }
+
+                this.pageNumbers = Array.from(
+                    { length: endPage - startPage + 1 },
+                    (_, i) => startPage + i
+                );
+            },
+
+            updatePaginatedTickets() {
+                const start = (this.currentPage - 1) * this.itemsPerPage;
+                const end = start + this.itemsPerPage;
+                this.paginatedTickets = this.filteredTickets.slice(start, end);
+            },
+
+            prevPage() {
+                if (this.currentPage > 1) {
+                    this.currentPage--;
+                }
+            },
+
+            nextPage() {
+                if (this.currentPage < this.totalPages) {
+                    this.currentPage++;
+                }
+            },
+
+            goToPage(page) {
+                if (page >= 1 && page <= this.totalPages) {
+                    this.currentPage = page;
+                }
+            },
+
+            formatDate(dateString) {
+                if (!dateString) return 'N/A';
+                const date = new Date(dateString);
+                return date.toLocaleDateString() + ' ' + date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+            },
+
+            openTicketDetailsModal(ticketId) {
+                window.dispatchEvent(new CustomEvent('open-ticket-modal', {
+                    detail: { ticketId: ticketId }
+                }));
+            },
+
+            editTicket(ticketId) {
+                window.location.href = `edit_ticket.php?id=${ticketId}`;
+            },
+
+            deleteTicket(ticketId) {
+                if (confirm('Are you sure you want to delete this ticket?')) {
+                    this.performDeleteTicket(ticketId);
+                }
+            },
+
+            async performDeleteTicket(ticketId) {
+                try {
+                    const formData = new FormData();
+                    formData.append('ticket_id', ticketId);
+
+                    const response = await fetch('ajax/ajax_handlers.php?action=delete_ticket', {
+                        method: 'POST',
+                        body: formData
+                    });
+
+                    const data = await response.json();
+
+                    if (data.success) {
+                        // Remove from local data
+                        this.tickets = this.tickets.filter(ticket => ticket.id !== ticketId);
+                        this.applyFilters();
+                        alert('Ticket deleted successfully');
+                    } else {
+                        alert('Error deleting ticket: ' + data.error);
+                    }
+                } catch (error) {
+                    console.error('Failed to delete ticket:', error);
+                    alert('Failed to delete ticket. Please try again.');
+                }
+            }
+        };
+    }
+
 </script>
 
 <div x-show="activeView === 'tickets'" class="flex gap-6" x-data="{ 
@@ -772,7 +1051,7 @@ $pastDueCount = count(array_filter($tickets, function ($ticket) {
     </div>
 
     <!-- Right Content - Kanban Columns -->
-    <div class="flex-1 py-4 px-6">
+    <div x-show="activeViewSection !== 'all-tickets'" class="flex-1 py-4 px-6">
         <!-- Aligned Tickets Nav -->
         <div class="flex items-center justify-between mb-4 border-b border-gray-200 pb-2">
             <div class="flex items-center">
@@ -806,12 +1085,11 @@ $pastDueCount = count(array_filter($tickets, function ($ticket) {
             </div>
         </div>
 
-        <!-- Kanban Columns -->
-        <div class="kanban-container">
+        <div x-show="activeViewSection !== 'all-tickets'" class="kanban-container">
             <div class="kanban-columns" x-data="ticketTable()">
                 <!-- Unseen Column -->
                 <div class="kanban-column">
-                    <h2 class="text-lg font-semibold text-gray-800 mb-4">Unseen</h2>
+                    <h2 class="text-lg font-semibold text-gray-800 mb-4">Open</h2>
                     <div class="ticket-list">
                         <template x-for="ticket in paginatedTickets('unseen')" :key="ticket.id">
                             <!-- Ticket Card -->
@@ -928,7 +1206,7 @@ $pastDueCount = count(array_filter($tickets, function ($ticket) {
 
                 <!-- Seen Column -->
                 <div class="kanban-column">
-                    <h2 class="text-lg font-semibold text-gray-800 mb-4">Processing</h2>
+                    <h2 class="text-lg font-semibold text-gray-800 mb-4">Processing & Pending</h2>
                     <div class="ticket-list">
                         <template x-for="ticket in paginatedTickets('seen')" :key="ticket.id">
                             <!-- Ticket Card -->
@@ -943,16 +1221,15 @@ $pastDueCount = count(array_filter($tickets, function ($ticket) {
                                     </button>
                                 </div>
 
-                                <!-- Ticket Details -->
                                 <div class="text-sm text-gray-600">
                                     <p><strong>Ticket #:</strong> <span x-text="ticket.id"></span></p>
                                     <p><strong>Category:</strong> <span x-text="ticket.category_name"></span></p>
                                     <p><strong>Priority:</strong>
                                         <span class="px-2 py-1 rounded text-sm" :class="{
-                            'bg-red-500 text-white': ticket.priority_name === 'High',
-                            'bg-yellow-500 text-white': ticket.priority_name === 'Medium',
-                            'bg-green-500 text-white': ticket.priority_name === 'Low'
-                            }" x-text="ticket.priority_name"></span>
+                    'bg-red-500 text-white': ticket.priority_name === 'High',
+                    'bg-yellow-500 text-white': ticket.priority_name === 'Medium',
+                    'bg-green-500 text-white': ticket.priority_name === 'Low'
+                }" x-text="ticket.priority_name"></span>
                                     </p>
                                     <p><strong>Created:</strong> <span x-text="formatDate(ticket.created_at)"></span>
                                     </p>
@@ -980,13 +1257,12 @@ $pastDueCount = count(array_filter($tickets, function ($ticket) {
                                                     class="w-full border rounded px-3 py-2 text-sm">
                                                     <option value="">Select Category</option>
                                                     <template x-for="category in categories" :key="category.id">
-                                                        <option :value="category.id" x-text="category.name">
-                                                        </option>
+                                                        <option :value="category.id" x-text="category.name"></option>
                                                     </template>
                                                 </select>
                                             </div>
 
-                                            <!-- Assigned To Dropdown -->
+                                            <!-- Assigned To Dropdown FIX THISSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSS-->
                                             <div>
                                                 <label class="block text-sm font-medium text-gray-700 mb-1">Assigned
                                                     To</label>
@@ -999,7 +1275,6 @@ $pastDueCount = count(array_filter($tickets, function ($ticket) {
                                                 </select>
                                             </div>
 
-                                            <!-- Priority Dropdown -->
                                             <div>
                                                 <label
                                                     class="block text-sm font-medium text-gray-700 mb-1">Priority</label>
@@ -1007,21 +1282,21 @@ $pastDueCount = count(array_filter($tickets, function ($ticket) {
                                                     class="w-full border rounded px-3 py-2 text-sm">
                                                     <option value="">Select Priority</option>
                                                     <template x-for="priority in priorities" :key="priority.id">
-                                                        <option :value="priority.id" x-text="priority.name">
-                                                        </option>
+                                                        <option :value="priority.id" x-text="priority.name"></option>
                                                     </template>
                                                 </select>
                                             </div>
 
-                                            <!-- Update and Delete Buttons -->
+                                            <!-- Update and View Details Buttons -->
                                             <div class="flex space-x-2">
                                                 <button @click="updateTicket(ticket.id, ticket)"
                                                     class="flex-1 bg-blue-500 text-white py-2 rounded hover:bg-blue-600">
                                                     Update
                                                 </button>
-                                                <button @click="deleteTicket(ticket.id)"
-                                                    class="flex-1 bg-red-500 text-white py-2 rounded hover:bg-red-600">
-                                                    Delete
+                                                <!-- Replace Delete Button with View Details Button -->
+                                                <button @click="openTicketDetailsModal(ticket.id)"
+                                                    class="flex-1 bg-green-500 text-white py-2 rounded hover:bg-green-600">
+                                                    View Details
                                                 </button>
                                             </div>
                                         </div>
@@ -1064,16 +1339,15 @@ $pastDueCount = count(array_filter($tickets, function ($ticket) {
                                     </button>
                                 </div>
 
-                                <!-- Ticket Details -->
                                 <div class="text-sm text-gray-600">
                                     <p><strong>Ticket #:</strong> <span x-text="ticket.id"></span></p>
                                     <p><strong>Category:</strong> <span x-text="ticket.category_name"></span></p>
                                     <p><strong>Priority:</strong>
                                         <span class="px-2 py-1 rounded text-sm" :class="{
-                            'bg-red-500 text-white': ticket.priority_name === 'High',
-                            'bg-yellow-500 text-white': ticket.priority_name === 'Medium',
-                            'bg-green-500 text-white': ticket.priority_name === 'Low'
-                            }" x-text="ticket.priority_name"></span>
+                    'bg-red-500 text-white': ticket.priority_name === 'High',
+                    'bg-yellow-500 text-white': ticket.priority_name === 'Medium',
+                    'bg-green-500 text-white': ticket.priority_name === 'Low'
+                }" x-text="ticket.priority_name"></span>
                                     </p>
                                     <p><strong>Created:</strong> <span x-text="formatDate(ticket.created_at)"></span>
                                     </p>
@@ -1101,8 +1375,7 @@ $pastDueCount = count(array_filter($tickets, function ($ticket) {
                                                     class="w-full border rounded px-3 py-2 text-sm">
                                                     <option value="">Select Category</option>
                                                     <template x-for="category in categories" :key="category.id">
-                                                        <option :value="category.id" x-text="category.name">
-                                                        </option>
+                                                        <option :value="category.id" x-text="category.name"></option>
                                                     </template>
                                                 </select>
                                             </div>
@@ -1120,7 +1393,6 @@ $pastDueCount = count(array_filter($tickets, function ($ticket) {
                                                 </select>
                                             </div>
 
-                                            <!-- Priority Dropdown -->
                                             <div>
                                                 <label
                                                     class="block text-sm font-medium text-gray-700 mb-1">Priority</label>
@@ -1128,21 +1400,21 @@ $pastDueCount = count(array_filter($tickets, function ($ticket) {
                                                     class="w-full border rounded px-3 py-2 text-sm">
                                                     <option value="">Select Priority</option>
                                                     <template x-for="priority in priorities" :key="priority.id">
-                                                        <option :value="priority.id" x-text="priority.name">
-                                                        </option>
+                                                        <option :value="priority.id" x-text="priority.name"></option>
                                                     </template>
                                                 </select>
                                             </div>
 
-                                            <!-- Update and Delete Buttons -->
+                                            <!-- Update and View Details Buttons -->
                                             <div class="flex space-x-2">
                                                 <button @click="updateTicket(ticket.id, ticket)"
                                                     class="flex-1 bg-blue-500 text-white py-2 rounded hover:bg-blue-600">
                                                     Update
                                                 </button>
-                                                <button @click="deleteTicket(ticket.id)"
-                                                    class="flex-1 bg-red-500 text-white py-2 rounded hover:bg-red-600">
-                                                    Delete
+                                                <!-- Replace Delete Button with View Details Button -->
+                                                <button @click="openTicketDetailsModal(ticket.id)"
+                                                    class="flex-1 bg-green-500 text-white py-2 rounded hover:bg-green-600">
+                                                    View Details
                                                 </button>
                                             </div>
                                         </div>
@@ -1167,6 +1439,295 @@ $pastDueCount = count(array_filter($tickets, function ($ticket) {
         </div>
     </div>
 
+    <div class="flex-1 py-4 px-6" x-show="activeViewSection === 'all-tickets'" x-data="ticketsTableView()">
+        <!-- Aligned Tickets Nav -->
+        <div class="flex items-center justify-between mb-4 border-b border-gray-200 pb-2">
+            <div class="flex items-center">
+                <i class="fas fa-bars mr-2 cursor-pointer" @click="isViewsSidebarOpen = !isViewsSidebarOpen"></i>
+                <h1 class="text-xl font-bold text-gray-800">All Tickets</h1>
+                <i class="fas fa-chevron-down ml-2 text-xs"></i>
+            </div>
+            <!-- Controls for table view -->
+            <div class="bg-white p-4 mb-4 rounded-lg shadow"">
+                <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+                    <!-- Search input -->
+                    <div>
+                        <label for="searchQuery" class="block text-sm font-medium text-gray-700 mb-1">Search</label>
+                        <div class="mt-1 relative rounded-md shadow-sm">
+                            <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                                <i class="fas fa-search text-gray-400"></i>
+                            </div>
+                            <input type="text" name="searchQuery" id="searchQuery"
+                                class="focus:ring-blue-500 focus:border-blue-500 block w-full pl-10 pr-3 py-2 sm:text-sm border-gray-300 rounded-md"
+                                placeholder="Search tickets..." x-model="filters.searchQuery">
+                        </div>
+                    </div>
+
+                    <!-- Status filter -->
+                    <div>
+                        <label for="statusFilter" class="block text-sm font-medium text-gray-700 mb-1">Status</label>
+                        <select id="statusFilter"
+                            class="mt-1 block w-full py-2 px-3 border border-gray-300 bg-white rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
+                            x-model="filters.status" @change="applyFilters()">
+                            <option value="">All Statuses</option>
+                            <option value="unseen">Unseen</option>
+                            <option value="seen">Processing</option>
+                            <option value="resolved">Resolved</option>
+                        </select>
+                    </div>
+
+                    <!-- Priority filter -->
+                    <div>
+                        <label for="priorityFilter"
+                            class="block text-sm font-medium text-gray-700 mb-1">Priority</label>
+                        <select id="priorityFilter"
+                            class="mt-1 block w-full py-2 px-3 border border-gray-300 bg-white rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
+                            x-model="filters.priority" @change="applyFilters()">
+                            <option value="">All Priorities</option>
+                            <option value="High">High</option>
+                            <option value="Medium">Medium</option>
+                            <option value="Low">Low</option>
+                        </select>
+                    </div>
+
+                    <!-- Category filter -->
+                    <div>
+                        <label for="categoryFilter"
+                            class="block text-sm font-medium text-gray-700 mb-1">Category</label>
+                        <select id="categoryFilter"
+                            class="mt-1 block w-full py-2 px-3 border border-gray-300 bg-white rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
+                            x-model="filters.category" @change="applyFilters()">
+                            <option value="">All Categories</option>
+                            <template x-for="category in getUniqueValues('category_name')" :key="category">
+                                <option :value="category" x-text="category"></option>
+                            </template>
+                        </select>
+                    </div>
+                </div>
+
+                <!-- Additional filters row -->
+                <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mt-4">
+                    <!-- Assigned To filter -->
+                    <div>
+                        <label for="assignedToFilter" class="block text-sm font-medium text-gray-700 mb-1">Assigned
+                            To</label>
+                        <select id="assignedToFilter"
+                            class="mt-1 block w-full py-2 px-3 border border-gray-300 bg-white rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
+                            x-model="filters.assignedTo">
+                            <option value="">All Agents</option>
+                            <template x-for="agent in getUniqueValues('assigned_to_name')" :key="agent">
+                                <option :value="agent" x-text="agent"></option>
+                            </template>
+                        </select>
+                    </div>
+
+                    <!-- Reset filters button -->
+                    <div class="flex items-end">
+                        <button @click="resetFilters()"
+                            class="inline-flex items-center px-4 py-2 border border-gray-300 text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50">
+                            <i class="fas fa-times-circle mr-2"></i>
+                            Reset Filters
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- All Tickets Table -->
+        <div class="bg-white rounded-lg shadow overflow-hidden">
+            <!-- Table Header -->
+            <table class="w-full">
+                <thead class="bg-gray-50">
+                    <tr>
+                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer"
+                            @click="sortBy('id')">
+                            <div class="flex items-center">
+                                Ticket #
+                                <i class="fas fa-sort ml-1" :class="{
+                                'fa-sort-up': sortField === 'id' && sortDirection === 'asc',
+                                'fa-sort-down': sortField === 'id' && sortDirection === 'desc',
+                            }"></i>
+                            </div>
+                        </th>
+                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer"
+                            @click="sortBy('title')">
+                            <div class="flex items-center">
+                                Title
+                                <i class="fas fa-sort ml-1" :class="{
+                                'fa-sort-up': sortField === 'title' && sortDirection === 'asc',
+                                'fa-sort-down': sortField === 'title' && sortDirection === 'desc',
+                            }"></i>
+                            </div>
+                        </th>
+                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer"
+                            @click="sortBy('category_name')">
+                            <div class="flex items-center">
+                                Category
+                                <i class="fas fa-sort ml-1" :class="{
+                                'fa-sort-up': sortField === 'category_name' && sortDirection === 'asc',
+                                'fa-sort-down': sortField === 'category_name' && sortDirection === 'desc',
+                            }"></i>
+                            </div>
+                        </th>
+                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer"
+                            @click="sortBy('status')">
+                            <div class="flex items-center">
+                                Status
+                                <i class="fas fa-sort ml-1" :class="{
+                                'fa-sort-up': sortField === 'status' && sortDirection === 'asc',
+                                'fa-sort-down': sortField === 'status' && sortDirection === 'desc',
+                            }"></i>
+                            </div>
+                        </th>
+                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer"
+                            @click="sortBy('priority_name')">
+                            <div class="flex items-center">
+                                Priority
+                                <i class="fas fa-sort ml-1" :class="{
+                                'fa-sort-up': sortField === 'priority_name' && sortDirection === 'asc',
+                                'fa-sort-down': sortField === 'priority_name' && sortDirection === 'desc',
+                            }"></i>
+                            </div>
+                        </th>
+                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer"
+                            @click="sortBy('assigned_to_name')">
+                            <div class="flex items-center">
+                                Assigned To
+                                <i class="fas fa-sort ml-1" :class="{
+                                'fa-sort-up': sortField === 'assigned_to_name' && sortDirection === 'asc',
+                                'fa-sort-down': sortField === 'assigned_to_name' && sortDirection === 'desc',
+                            }"></i>
+                            </div>
+                        </th>
+                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer"
+                            @click="sortBy('created_at')">
+                            <div class="flex items-center">
+                                Created
+                                <i class="fas fa-sort ml-1" :class="{
+                                'fa-sort-up': sortField === 'created_at' && sortDirection === 'asc',
+                                'fa-sort-down': sortField === 'created_at' && sortDirection === 'desc',
+                            }"></i>
+                            </div>
+                        </th>
+                        <th class="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
+                            Actions
+                        </th>
+                    </tr>
+                </thead>
+                <tbody class="bg-white divide-y divide-gray-200">
+                    <template x-for="ticket in paginatedTickets" :key="ticket.id">
+                        <tr class="hover:bg-gray-50 transition-colors">
+                            <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900"
+                                x-text="ticket.id"></td>
+                            <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500" x-text="ticket.title"></td>
+                            <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500"
+                                x-text="ticket.category_name || 'Uncategorized'"></td>
+                            <td class="px-6 py-4 whitespace-nowrap text-sm">
+                                <span class="px-2 py-1 inline-flex text-xs leading-5 font-semibold rounded-full" :class="{
+                                      'bg-yellow-100 text-yellow-800': ticket.status === 'unseen',
+                                      'bg-blue-100 text-blue-800': ticket.status === 'seen',
+                                      'bg-green-100 text-green-800': ticket.status === 'resolved'
+                                  }" x-text="ticket.status === 'unseen' ? 'Unseen' : 
+                                          ticket.status === 'seen' ? 'Processing' : 'Resolved'">
+                                </span>
+                            </td>
+                            <td class="px-6 py-4 whitespace-nowrap text-sm">
+                                <span class="px-2 py-1 inline-flex text-xs leading-5 font-semibold rounded-full" :class="{
+                                      'bg-red-100 text-red-800': ticket.priority_name === 'High',
+                                      'bg-yellow-100 text-yellow-800': ticket.priority_name === 'Medium',
+                                      'bg-green-100 text-green-800': ticket.priority_name === 'Low'
+                                  }" x-text="ticket.priority_name || 'Unset'">
+                                </span>
+                            </td>
+                            <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500"
+                                x-text="ticket.assigned_to_name || 'Unassigned'"></td>
+                            <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500"
+                                x-text="formatDate(ticket.created_at)"></td>
+                            <td class="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
+                                <button @click="openTicketDetailsModal(ticket.id)"
+                                    class="text-blue-600 hover:text-blue-900 mr-3">
+                                    View
+                                </button>
+                                <button @click="editTicket(ticket.id)" class="text-green-600 hover:text-green-900 mr-3">
+                                    Edit
+                                </button>
+                                <button @click="deleteTicket(ticket.id)" class="text-red-600 hover:text-red-900">
+                                    Delete
+                                </button>
+                            </td>
+                        </tr>
+                    </template>
+                    <!-- Empty state when no tickets are found -->
+                    <tr x-show="paginatedTickets.length === 0">
+                        <td colspan="8" class="px-6 py-10 text-center text-gray-500">
+                            <div class="flex flex-col items-center">
+                                <i class="fas fa-ticket-alt text-4xl mb-3 text-gray-300"></i>
+                                <p class="text-lg font-medium">No tickets found</p>
+                                <p class="text-sm">Try adjusting your search or filter criteria</p>
+                            </div>
+                        </td>
+                    </tr>
+                </tbody>
+            </table>
+
+            <!-- Pagination Controls -->
+            <div class="bg-white px-4 py-3 flex items-center justify-between border-t border-gray-200 sm:px-6">
+                <div class="flex-1 flex justify-between sm:hidden">
+                    <button @click="prevPage()" :disabled="currentPage === 1"
+                        class="relative inline-flex items-center px-4 py-2 border border-gray-300 text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50"
+                        :class="{ 'opacity-50 cursor-not-allowed': currentPage === 1 }">
+                        Previous
+                    </button>
+                    <button @click="nextPage()" :disabled="currentPage >= totalPages"
+                        class="ml-3 relative inline-flex items-center px-4 py-2 border border-gray-300 text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50"
+                        :class="{ 'opacity-50 cursor-not-allowed': currentPage >= totalPages }">
+                        Next
+                    </button>
+                </div>
+                <div class="hidden sm:flex-1 sm:flex sm:items-center sm:justify-between">
+                    <div>
+                        <p class="text-sm text-gray-700">
+                            Showing
+                            <span class="font-medium" x-text="(currentPage - 1) * itemsPerPage + 1"></span>
+                            to
+                            <span class="font-medium"
+                                x-text="Math.min(currentPage * itemsPerPage, filteredTickets.length)"></span>
+                            of
+                            <span class="font-medium" x-text="filteredTickets.length"></span>
+                            results
+                        </p>
+                    </div>
+                    <div>
+                        <nav class="relative z-0 inline-flex rounded-md shadow-sm -space-x-px" aria-label="Pagination">
+                            <button @click="prevPage()" :disabled="currentPage === 1"
+                                class="relative inline-flex items-center px-2 py-2 rounded-l-md border border-gray-300 bg-white text-sm font-medium text-gray-500 hover:bg-gray-50"
+                                :class="{ 'opacity-50 cursor-not-allowed': currentPage === 1 }">
+                                <span class="sr-only">Previous</span>
+                                <i class="fas fa-chevron-left h-5 w-5"></i>
+                            </button>
+
+                            <!-- Page number buttons (dynamic) -->
+                            <template x-for="page in pageNumbers" :key="page">
+                                <button @click="goToPage(page)"
+                                    class="relative inline-flex items-center px-4 py-2 border border-gray-300 bg-white text-sm font-medium hover:bg-gray-50"
+                                    :class="page === currentPage ? 'z-10 bg-blue-50 border-blue-500 text-blue-600' : 'text-gray-500'">
+                                    <span x-text="page"></span>
+                                </button>
+                            </template>
+
+                            <button @click="nextPage()" :disabled="currentPage >= totalPages"
+                                class="relative inline-flex items-center px-2 py-2 rounded-r-md border border-gray-300 bg-white text-sm font-medium text-gray-500 hover:bg-gray-50"
+                                :class="{ 'opacity-50 cursor-not-allowed': currentPage >= totalPages }">
+                                <span class="sr-only">Next</span>
+                                <i class="fas fa-chevron-right h-5 w-5"></i>
+                            </button>
+                        </nav>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <div x-data="ticketDetailsModal()" x-show="isOpen" class="fixed inset-0 z-50 overflow-y-auto" x-cloak>
         <div class="flex items-center justify-center min-h-screen p-4">
             <!-- Modal Backdrop -->
@@ -1183,7 +1744,7 @@ $pastDueCount = count(array_filter($tickets, function ($ticket) {
                 x-transition:leave="transition ease-in duration-200"
                 x-transition:leave-start="opacity-100 transform scale-100"
                 x-transition:leave-end="opacity-0 transform scale-95"
-                class="relative bg-white rounded-lg shadow-xl w-full max-w-5xl mx-auto max-h-[90vh] overflow-y-auto">
+                class="relative bg-white rounded-lg shadow-xl w-full max-w-4xl mx-auto max-h-[90vh] overflow-y-auto">
 
                 <div class="flex justify-between items-center p-4 border-b border-gray-200 sticky top-0 bg-white z-10">
                     <h2 class="text-xl font-bold text-gray-800" x-text="'Ticket #' + (currentTicket?.id || '')"></h2>
@@ -1390,24 +1951,24 @@ $pastDueCount = count(array_filter($tickets, function ($ticket) {
                             <div class="mb-4">
                                 <h4 class="font-medium mb-2">Update Status</h4>
                                 <div class="flex flex-wrap gap-2">
-                                    <button @click="updateStatus('Open')" class="px-3 py-1 text-sm rounded-full"
-                                        :class="currentTicket?.status === 'Open' ? 'bg-green-500 text-white' : 'bg-gray-200 hover:bg-gray-300'">
+                                    <button @click="updateStatus('unseen')" class="px-3 py-1 text-sm rounded-full"
+                                        :class="currentTicket?.status === 'unseen' ? 'bg-green-500 text-white' : 'bg-gray-200 hover:bg-gray-300'">
                                         Open
                                     </button>
-                                    <button @click="updateStatus('In Progress')" class="px-3 py-1 text-sm rounded-full"
-                                        :class="currentTicket?.status === 'In Progress' ? 'bg-blue-500 text-white' : 'bg-gray-200 hover:bg-gray-300'">
+                                    <button @click="updateStatus('seen')" class="px-3 py-1 text-sm rounded-full"
+                                        :class="currentTicket?.status === 'seen' ? 'bg-blue-500 text-white' : 'bg-gray-200 hover:bg-gray-300'">
                                         In Progress
                                     </button>
-                                    <button @click="updateStatus('Pending')" class="px-3 py-1 text-sm rounded-full"
-                                        :class="currentTicket?.status === 'Pending' ? 'bg-yellow-500 text-white' : 'bg-gray-200 hover:bg-gray-300'">
+                                    <button @click="updateStatus('pending')" class="px-3 py-1 text-sm rounded-full"
+                                        :class="currentTicket?.status === 'pending' ? 'bg-yellow-500 text-white' : 'bg-gray-200 hover:bg-gray-300'">
                                         Pending
                                     </button>
-                                    <button @click="updateStatus('Resolved')" class="px-3 py-1 text-sm rounded-full"
-                                        :class="currentTicket?.status === 'Resolved' ? 'bg-purple-500 text-white' : 'bg-gray-200 hover:bg-gray-300'">
+                                    <button @click="updateStatus('resolved')" class="px-3 py-1 text-sm rounded-full"
+                                        :class="currentTicket?.status === 'resolved' ? 'bg-purple-500 text-white' : 'bg-gray-200 hover:bg-gray-300'">
                                         Resolved
                                     </button>
-                                    <button @click="updateStatus('Closed')" class="px-3 py-1 text-sm rounded-full"
-                                        :class="currentTicket?.status === 'Closed' ? 'bg-gray-600 text-white' : 'bg-gray-200 hover:bg-gray-300'">
+                                    <button @click="updateStatus('resolved')" class="px-3 py-1 text-sm rounded-full"
+                                        :class="currentTicket?.status === 'resolved' ? 'bg-gray-600 text-white' : 'bg-gray-200 hover:bg-gray-300'">
                                         Closed
                                     </button>
                                 </div>
