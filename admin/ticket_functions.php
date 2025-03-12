@@ -194,8 +194,8 @@ function assign_ticket($ticket_id, $admin_user_id, $assignee_id)
 
 
     $query = "SELECT 
-              (SELECT name FROM users WHERE id = t.assigned_to) AS old_assignee_name,
-              (SELECT name FROM users WHERE id = '$assignee_id') AS new_assignee_name
+              (SELECT name FROM staff_members WHERE id = t.assigned_to) AS old_assignee_name,
+              (SELECT name FROM staff_members WHERE id = '$assignee_id') AS new_assignee_name
               FROM tickets t
               WHERE t.id = '$ticket_id'";
     $result = $db->query($query);

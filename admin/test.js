@@ -2,6 +2,7 @@ function ticketDetailsModal() {
     console.log("INITIALIZING TICKET DETAILS MODAL");
     return {
         isOpen: false,
+        
         currentTicket: null,
         ticketHistory: [],
         attachments: [],
