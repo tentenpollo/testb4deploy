@@ -285,7 +285,6 @@ if (isset($_GET['action'])) {
 
         case 'get_all_tickets':
             try {
-                // Log the action for debugging
                 error_log("Processing get_all_tickets action");
 
                 // Call the function

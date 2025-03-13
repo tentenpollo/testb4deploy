@@ -286,7 +286,7 @@ function getAssignableUsers()
 {
     $mysqli = db_connect();
 
-    $sql = "SELECT id, name FROM staff_members WHERE role IN ('admin', 'support') ORDER BY name";
+    $sql = "SELECT id, name FROM staff_members WHERE role IN ('admin', 'agent', 'master_agent') ORDER BY name";
     $result = $mysqli->query($sql);
 
     $users = [];

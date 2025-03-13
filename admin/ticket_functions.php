@@ -372,14 +372,14 @@ function get_all_tickets($filters = [])
        c.name AS category_name, 
        p.name AS priority_name, 
        IFNULL(CONCAT(u_created.first_name, ' ', u_created.last_name), 'Guest') AS created_by_name, 
-       IFNULL(CONCAT(u_assigned.first_name, ' ', u_assigned.last_name), 'Unassigned') AS assigned_to_name, 
+       IFNULL(CONCAT(u_assigned.name), 'Unassigned') AS assigned_to_name, 
        IF(t.created_by = 'guest', t.guest_email, u_created.email) AS creator_email,
-       u_assigned.user_id AS assigned_user_id
+       u_assigned.id AS assigned_user_id
 FROM tickets t 
 LEFT JOIN categories c ON t.category_id = c.id 
 LEFT JOIN priorities p ON t.priority_id = p.id 
 LEFT JOIN users u_created ON t.created_by = 'user' AND t.user_id = u_created.user_id 
-LEFT JOIN users u_assigned ON t.assigned_to = u_assigned.user_id 
+LEFT JOIN staff_members u_assigned ON t.assigned_to = u_assigned.id 
 WHERE t.is_archived = 0";
 
         // Validate and sanitize filters
