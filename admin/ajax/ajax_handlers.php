@@ -97,6 +97,71 @@ if (isset($_GET['action'])) {
             }
             break;
 
+        case 'upload_attachment':
+            error_log("Starting upload_attachment process");
+
+            $uploader_id = 0;
+
+            // Check if there's a logged-in staff member
+            if (isset($_SESSION['staff_id'])) {
+                $uploader_id = $_SESSION['staff_id'];
+            }
+            // If not a staff member, check if there's a logged-in user
+            else if (isset($_SESSION['user_id'])) {
+                $uploader_id = $_SESSION['user_id'];
+            }
+
+            if (isset($_FILES['attachment']) && isset($_POST['ticket_id'])) {
+                $ticket_id = $_POST['ticket_id'];
+                error_log("Ticket ID: " . $ticket_id);
+                $file = $_FILES['attachment'];
+                error_log("File data: " . print_r($file, true));
+
+                if ($file['error'] === UPLOAD_ERR_OK) {
+                    $tmp_name = $file['tmp_name'];
+                    $name = basename($file['name']);
+                    $size = $file['size'];
+
+                    $upload_dir = '../../uploads/tickets/' . $ticket_id;
+                    error_log("Upload directory: " . $upload_dir);
+
+                    if (!file_exists($upload_dir)) {
+                        error_log("Creating directory: " . $upload_dir);
+                        mkdir($upload_dir, 0755, true);
+                    }
+
+                    $file_path = $upload_dir . '/' . time() . '_' . $name;
+                    error_log("Target file path: " . $file_path);
+
+                    if (move_uploaded_file($tmp_name, $file_path)) {
+                        error_log("File moved successfully");
+                        $attachment_id = add_ticket_attachment($ticket_id, $uploader_id, $name, $file_path, $size);
+                        error_log("add_ticket_attachment returned: " . ($attachment_id ? $attachment_id : "false"));
+
+                        if ($attachment_id) {
+                            echo json_encode(['success' => true, 'attachment_id' => $attachment_id]);
+                            error_log("Success response sent");
+                        } else {
+                            echo json_encode(['success' => false, 'error' => 'Failed to save attachment to database']);
+                            error_log("Database error response sent");
+                        }
+                    } else {
+                        $move_error = error_get_last();
+                        error_log("Failed to move uploaded file. Error: " . print_r($move_error, true));
+                        echo json_encode(['success' => false, 'error' => 'Failed to upload file: ' . $move_error['message']]);
+                    }
+                } else {
+                    error_log("File upload error code: " . $file['error']);
+                    echo json_encode(['success' => false, 'error' => 'File upload error: ' . $file['error']]);
+                }
+            } else {
+                error_log("Missing file or ticket ID. POST data: " . print_r($_POST, true));
+                error_log("FILES data: " . print_r($_FILES, true));
+                echo json_encode(['success' => false, 'error' => 'Missing file or ticket ID']);
+            }
+            error_log("End of upload_attachment process");
+            break;
+
         case 'assign_ticket':
             if (isset($_POST['ticket_id']) && isset($_POST['assignee_id'])) {
                 $ticket_id = $_POST['ticket_id'];
@@ -153,6 +218,66 @@ if (isset($_GET['action'])) {
             echo json_encode(['success' => true, 'priorities' => $priorities]);
             break;
 
+        case 'get_staff_members':
+            $staff_members = get_staff_members();
+            echo json_encode([
+                'success' => true,
+                'staff_members' => $staff_members
+            ]);
+            break;
+
+        case 'download_attachment':
+            if (isset($_GET['ticket_id']) && isset($_GET['filename'])) {
+                $ticket_id = $_GET['ticket_id'];
+                $filename = $_GET['filename'];
+
+                // Validate that this file belongs to this ticket (security check)
+                $ticket_attachments = get_ticket_attachments($ticket_id);
+                $valid_attachment = false;
+
+                foreach ($ticket_attachments as $attachment) {
+                    if (basename($attachment['file_path']) === $filename) {
+                        $valid_attachment = true;
+                        $file_path = $attachment['file_path'];
+                        break;
+                    }
+                }
+
+                if ($valid_attachment && file_exists($file_path)) {
+                    // Set appropriate content type based on file extension
+                    $file_ext = pathinfo($file_path, PATHINFO_EXTENSION);
+                    $content_type = 'application/octet-stream'; // Default
+
+                    // Set specific content types for common file types
+                    if (strtolower($file_ext) === 'jpg' || strtolower($file_ext) === 'jpeg') {
+                        $content_type = 'image/jpeg';
+                    } elseif (strtolower($file_ext) === 'png') {
+                        $content_type = 'image/png';
+                    } elseif (strtolower($file_ext) === 'pdf') {
+                        $content_type = 'application/pdf';
+                    }
+
+                    header('Content-Description: File Transfer');
+                    header('Content-Type: ' . $content_type);
+                    header('Content-Disposition: attachment; filename="' . basename($file_path) . '"');
+                    header('Expires: 0');
+                    header('Cache-Control: must-revalidate');
+                    header('Pragma: public');
+                    header('Content-Length: ' . filesize($file_path));
+                    // Clear output buffer
+                    ob_clean();
+                    flush();
+                    // Output file
+                    readfile($file_path);
+                    exit;
+                } else {
+                    echo json_encode(['success' => false, 'error' => 'File not found']);
+                }
+            } else {
+                echo json_encode(['success' => false, 'error' => 'Missing ticket ID or filename']);
+            }
+            break;
+
         case 'get_assignable_users':
             $users = get_assignable_users();
             echo json_encode(['success' => true, 'users' => $users]);
@@ -186,43 +311,4 @@ if (isset($_GET['action'])) {
 }
 
 
-if (isset($_FILES['attachment']) && isset($_POST['ticket_id'])) {
-    $ticket_id = $_POST['ticket_id'];
-    $file = $_FILES['attachment'];
-
-
-    if ($file['error'] === UPLOAD_ERR_OK) {
-        $tmp_name = $file['tmp_name'];
-        $name = basename($file['name']);
-        $size = $file['size'];
-
-
-        $upload_dir = 'uploads/tickets/' . $ticket_id;
-        if (!file_exists($upload_dir)) {
-            mkdir($upload_dir, 0755, true);
-        }
-
-
-        $file_path = $upload_dir . '/' . time() . '_' . $name;
-
-
-        if (move_uploaded_file($tmp_name, $file_path)) {
-
-            $attachment_id = add_ticket_attachment($ticket_id, $user_id, $name, $file_path, $size);
-
-            if ($attachment_id) {
-                echo json_encode(['success' => true, 'attachment_id' => $attachment_id]);
-            } else {
-                echo json_encode(['success' => false, 'error' => 'Failed to save attachment to database']);
-            }
-        } else {
-            echo json_encode(['success' => false, 'error' => 'Failed to upload file']);
-        }
-    } else {
-        echo json_encode(['success' => false, 'error' => 'File upload error: ' . $file['error']]);
-    }
-    exit;
-}
-
-echo json_encode(['success' => false, 'error' => 'No action specified']);
 ?>

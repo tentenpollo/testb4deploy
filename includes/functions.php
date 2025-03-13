@@ -215,31 +215,28 @@ function verify_csrf_token()
 function getAllTickets()
 {
     $mysqli = db_connect();
-
     $sql = "SELECT 
         t.id, 
         t.title, 
         t.description, 
         t.status, 
         t.created_by, 
-        t.created_at,
-        t.priority_id,
-        t.category_id,
-        t.assigned_to,
-        p.name as priority_name,
-        c.name as category_name
-    FROM 
-        tickets t
-    LEFT JOIN 
-        priorities p ON t.priority_id = p.id
-    LEFT JOIN 
-        categories c ON t.category_id = c.id
-    ORDER BY 
-        t.created_at DESC";
+        t.created_at, 
+        t.priority_id, 
+        t.category_id, 
+        t.assigned_to, 
+        p.name as priority_name, 
+        c.name as category_name,
+        sm.name as assigned_to_name
+    FROM tickets t 
+    LEFT JOIN priorities p ON t.priority_id = p.id 
+    LEFT JOIN categories c ON t.category_id = c.id
+    LEFT JOIN staff_members sm ON t.assigned_to = sm.id
+    ORDER BY t.created_at DESC";
 
     $result = $mysqli->query($sql);
-
     $tickets = [];
+
     if ($result->num_rows > 0) {
         while ($row = $result->fetch_assoc()) {
             $tickets[] = $row;

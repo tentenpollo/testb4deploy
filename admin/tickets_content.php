@@ -88,11 +88,33 @@ $pastDueCount = count(array_filter($tickets, function ($ticket) {
                 console.log("Ticket modal initialized and listening for events");
             },
 
+            downloadAttachment(attachment) {
+                // Extract filename from path (works with both Windows and Unix paths)
+                const fullPath = attachment.file_path;
+                const filename = fullPath.split(/[\/\\]/).pop();
+
+                // Use a dedicated endpoint for downloads
+                const downloadUrl = `ajax/ajax_handlers.php?action=download_attachment&ticket_id=${this.currentTicket.id}&filename=${encodeURIComponent(filename)}`;
+
+                const iframe = document.createElement('iframe');
+                iframe.style.display = 'none';
+                iframe.src = downloadUrl;
+                document.body.appendChild(iframe);
+
+                // Clean up after a delay
+                setTimeout(() => {
+                    document.body.removeChild(iframe);
+                }, 5000);
+
+                console.log(`Attempting to download: ${filename} via ${downloadUrl}`);
+            },
+
             async openModal(ticketId) {
                 console.log("Opening modal for ticket ID:", ticketId)
                 this.isOpen = true;
                 await this.loadTicketDetails(ticketId);
                 await this.loadTicketHistory(ticketId);
+                await this.loadTicketAttachments(ticketId);
                 await this.loadPriorities();
                 await this.loadAssignableUsers();
                 document.body.classList.add('overflow-hidden');
@@ -104,6 +126,22 @@ $pastDueCount = count(array_filter($tickets, function ($ticket) {
                 this.ticketHistory = [];
                 this.attachments = [];
                 document.body.classList.remove('overflow-hidden');
+            },
+
+            async loadTicketAttachments(ticketId) {
+                try {
+                    const response = await fetch(`ajax/ajax_handlers.php?action=get_ticket_attachments&ticket_id=${ticketId}`);
+                    const data = await response.json();
+
+                    if (data.success) {
+                        this.attachments = data.attachments;
+                    } else {
+                        alert('Error loading ticket attachments: ' + data.error);
+                    }
+                } catch (error) {
+                    console.error('Failed to load ticket attachments:', error);
+                    alert('Failed to load ticket attachments. Please try again.');
+                }
             },
 
             async loadTicketDetails(ticketId) {
@@ -251,7 +289,7 @@ $pastDueCount = count(array_filter($tickets, function ($ticket) {
                         // Update the local assignee name from the assignable users array
                         const assignee = this.assignableUsers.find(u => u.id === assigneeId);
                         this.currentTicket.assigned_to = assigneeId;
-                        this.currentTicket.assigned_to_name = assignee ? assignee.name : 'Unassigned';
+                        this.currentTicket.assigned_to_name = assignee ? assignee.name : 'Testing';
                         await this.loadTicketHistory(this.currentTicket.id);
                         alert('Ticket assigned successfully');
                     } else {
@@ -376,7 +414,6 @@ $pastDueCount = count(array_filter($tickets, function ($ticket) {
             },
 
             async addAttachment() {
-                // Create a file input element
                 const fileInput = document.createElement('input');
                 fileInput.type = 'file';
                 fileInput.multiple = false;
@@ -410,7 +447,9 @@ $pastDueCount = count(array_filter($tickets, function ($ticket) {
                     formData.append('attachment', file);
                     formData.append('ticket_id', this.currentTicket.id);
 
-                    const response = await fetch('ajax/ajax_handlers.php', {
+                    console.log("Uploading attachment for ticket ID:", this.currentTicket.id);
+                    console.log("Attachment file:", file);
+                    const response = await fetch('ajax/ajax_handlers.php?action=upload_attachment', {
                         method: 'POST',
                         body: formData
                     });
@@ -689,6 +728,7 @@ $pastDueCount = count(array_filter($tickets, function ($ticket) {
             tickets: [],
             filteredTickets: [],
             paginatedTickets: [],
+            staffMembers: [],
             isLoading: true,
             error: null,
 
@@ -714,7 +754,10 @@ $pastDueCount = count(array_filter($tickets, function ($ticket) {
             init() {
                 this.fetchTickets();
 
-                // Set up watchers for filters to automatically refresh data
+                this.fetchStaffMembers().then(() => {
+                    this.fetchTickets();
+                });
+
                 this.$watch('filters', () => {
                     this.applyFilters();
                 }, { deep: true }); // Add deep: true to watch nested properties
@@ -724,6 +767,22 @@ $pastDueCount = count(array_filter($tickets, function ($ticket) {
                 });
             },
 
+            async fetchStaffMembers() {
+                try {
+                    const response = await fetch('ajax/ajax_handlers.php?action=get_staff_members');
+                    const data = await response.json();
+
+                    if (data.success) {
+                        this.staffMembers = data.staff_members;
+                        console.log("Staff members loaded:", this.staffMembers);
+                    } else {
+                        console.error('Error loading staff members:', data.error);
+                    }
+                } catch (error) {
+                    console.error('Failed to fetch staff members:', error);
+                }
+            },
+
             async fetchTickets() {
                 this.isLoading = true;
                 try {
@@ -731,8 +790,18 @@ $pastDueCount = count(array_filter($tickets, function ($ticket) {
                     const data = await response.json();
 
                     if (data.success) {
-                        console.log("Received tickets:", data.tickets); // Debug: Check received data
-                        this.tickets = data.tickets;
+                        console.log("Received tickets:", data.tickets);
+
+                        // Map assigned_to IDs to actual names
+                        this.tickets = data.tickets.map(ticket => {
+                            // If ticket has assigned_to ID but no name
+                            if (ticket.assigned_to && (!ticket.assigned_to_name || ticket.assigned_to_name === '')) {
+                                const staffMember = this.staffMembers.find(staff => staff.id == ticket.assigned_to);
+                                ticket.assigned_to_name = staffMember ? staffMember.name : 'Unassigned';
+                            }
+                            return ticket;
+                        });
+
                         this.applyFilters();
                     } else {
                         this.error = data.error || 'Failed to load tickets';
@@ -746,7 +815,13 @@ $pastDueCount = count(array_filter($tickets, function ($ticket) {
                 }
             },
 
-            // Get unique values for dropdowns
+            getStaffNameById(staffId) {
+                if (!staffId) return 'Testing';
+                const staffMember = this.staffMembers.find(staff => staff.id == staffId);
+                console.log(`Looking for staff ID ${staffId}, found:`, staffMember);
+                return staffMember ? staffMember.name : 'Testing';
+            },
+
             getUniqueValues(field) {
                 const values = this.tickets
                     .map(ticket => ticket[field])
@@ -1439,6 +1514,7 @@ $pastDueCount = count(array_filter($tickets, function ($ticket) {
         </div>
     </div>
 
+    <!-- ALL TICKETS TABLE -->
     <div class="flex-1 py-4 px-6" x-show="activeViewSection === 'all-tickets'" x-data="ticketsTableView()">
         <!-- Aligned Tickets Nav -->
         <div class="flex items-center justify-between mb-4 border-b border-gray-200 pb-2">
@@ -1449,369 +1525,367 @@ $pastDueCount = count(array_filter($tickets, function ($ticket) {
             </div>
             <!-- Controls for table view -->
             <div class="bg-white p-4 mb-4 rounded-lg shadow"">
-                <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-                    <!-- Search input -->
-                    <div>
-                        <label for="searchQuery" class="block text-sm font-medium text-gray-700 mb-1">Search</label>
-                        <div class="mt-1 relative rounded-md shadow-sm">
-                            <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                                <i class="fas fa-search text-gray-400"></i>
-                            </div>
-                            <input type="text" name="searchQuery" id="searchQuery"
-                                class="focus:ring-blue-500 focus:border-blue-500 block w-full pl-10 pr-3 py-2 sm:text-sm border-gray-300 rounded-md"
-                                placeholder="Search tickets..." x-model="filters.searchQuery">
+                <div class=" grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+                <!-- Search input -->
+                <div>
+                    <label for="searchQuery" class="block text-sm font-medium text-gray-700 mb-1">Search</label>
+                    <div class="mt-1 relative rounded-md shadow-sm">
+                        <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                            <i class="fas fa-search text-gray-400"></i>
                         </div>
-                    </div>
-
-                    <!-- Status filter -->
-                    <div>
-                        <label for="statusFilter" class="block text-sm font-medium text-gray-700 mb-1">Status</label>
-                        <select id="statusFilter"
-                            class="mt-1 block w-full py-2 px-3 border border-gray-300 bg-white rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
-                            x-model="filters.status" @change="applyFilters()">
-                            <option value="">All Statuses</option>
-                            <option value="unseen">Unseen</option>
-                            <option value="seen">Processing</option>
-                            <option value="resolved">Resolved</option>
-                        </select>
-                    </div>
-
-                    <!-- Priority filter -->
-                    <div>
-                        <label for="priorityFilter"
-                            class="block text-sm font-medium text-gray-700 mb-1">Priority</label>
-                        <select id="priorityFilter"
-                            class="mt-1 block w-full py-2 px-3 border border-gray-300 bg-white rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
-                            x-model="filters.priority" @change="applyFilters()">
-                            <option value="">All Priorities</option>
-                            <option value="High">High</option>
-                            <option value="Medium">Medium</option>
-                            <option value="Low">Low</option>
-                        </select>
-                    </div>
-
-                    <!-- Category filter -->
-                    <div>
-                        <label for="categoryFilter"
-                            class="block text-sm font-medium text-gray-700 mb-1">Category</label>
-                        <select id="categoryFilter"
-                            class="mt-1 block w-full py-2 px-3 border border-gray-300 bg-white rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
-                            x-model="filters.category" @change="applyFilters()">
-                            <option value="">All Categories</option>
-                            <template x-for="category in getUniqueValues('category_name')" :key="category">
-                                <option :value="category" x-text="category"></option>
-                            </template>
-                        </select>
+                        <input type="text" name="searchQuery" id="searchQuery"
+                            class="focus:ring-blue-500 focus:border-blue-500 block w-full pl-10 pr-3 py-2 sm:text-sm border-gray-300 rounded-md"
+                            placeholder="Search tickets..." x-model="filters.searchQuery">
                     </div>
                 </div>
 
-                <!-- Additional filters row -->
-                <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mt-4">
-                    <!-- Assigned To filter -->
-                    <div>
-                        <label for="assignedToFilter" class="block text-sm font-medium text-gray-700 mb-1">Assigned
-                            To</label>
-                        <select id="assignedToFilter"
-                            class="mt-1 block w-full py-2 px-3 border border-gray-300 bg-white rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
-                            x-model="filters.assignedTo">
-                            <option value="">All Agents</option>
-                            <template x-for="agent in getUniqueValues('assigned_to_name')" :key="agent">
-                                <option :value="agent" x-text="agent"></option>
-                            </template>
-                        </select>
-                    </div>
+                <!-- Status filter -->
+                <div>
+                    <label for="statusFilter" class="block text-sm font-medium text-gray-700 mb-1">Status</label>
+                    <select id="statusFilter"
+                        class="mt-1 block w-full py-2 px-3 border border-gray-300 bg-white rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
+                        x-model="filters.status" @change="applyFilters()">
+                        <option value="">All Statuses</option>
+                        <option value="unseen">Unseen</option>
+                        <option value="seen">Processing</option>
+                        <option value="resolved">Resolved</option>
+                    </select>
+                </div>
 
-                    <!-- Reset filters button -->
-                    <div class="flex items-end">
-                        <button @click="resetFilters()"
-                            class="inline-flex items-center px-4 py-2 border border-gray-300 text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50">
-                            <i class="fas fa-times-circle mr-2"></i>
-                            Reset Filters
-                        </button>
-                    </div>
+                <!-- Priority filter -->
+                <div>
+                    <label for="priorityFilter" class="block text-sm font-medium text-gray-700 mb-1">Priority</label>
+                    <select id="priorityFilter"
+                        class="mt-1 block w-full py-2 px-3 border border-gray-300 bg-white rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
+                        x-model="filters.priority" @change="applyFilters()">
+                        <option value="">All Priorities</option>
+                        <option value="High">High</option>
+                        <option value="Medium">Medium</option>
+                        <option value="Low">Low</option>
+                    </select>
+                </div>
+
+                <!-- Category filter -->
+                <div>
+                    <label for="categoryFilter" class="block text-sm font-medium text-gray-700 mb-1">Category</label>
+                    <select id="categoryFilter"
+                        class="mt-1 block w-full py-2 px-3 border border-gray-300 bg-white rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
+                        x-model="filters.category" @change="applyFilters()">
+                        <option value="">All Categories</option>
+                        <template x-for="category in getUniqueValues('category_name')" :key="category">
+                            <option :value="category" x-text="category"></option>
+                        </template>
+                    </select>
                 </div>
             </div>
-        </div>
 
-        <!-- All Tickets Table -->
-        <div class="bg-white rounded-lg shadow overflow-hidden">
-            <!-- Table Header -->
-            <table class="w-full">
-                <thead class="bg-gray-50">
-                    <tr>
-                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer"
-                            @click="sortBy('id')">
-                            <div class="flex items-center">
-                                Ticket #
-                                <i class="fas fa-sort ml-1" :class="{
-                                'fa-sort-up': sortField === 'id' && sortDirection === 'asc',
-                                'fa-sort-down': sortField === 'id' && sortDirection === 'desc',
-                            }"></i>
-                            </div>
-                        </th>
-                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer"
-                            @click="sortBy('title')">
-                            <div class="flex items-center">
-                                Title
-                                <i class="fas fa-sort ml-1" :class="{
-                                'fa-sort-up': sortField === 'title' && sortDirection === 'asc',
-                                'fa-sort-down': sortField === 'title' && sortDirection === 'desc',
-                            }"></i>
-                            </div>
-                        </th>
-                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer"
-                            @click="sortBy('category_name')">
-                            <div class="flex items-center">
-                                Category
-                                <i class="fas fa-sort ml-1" :class="{
-                                'fa-sort-up': sortField === 'category_name' && sortDirection === 'asc',
-                                'fa-sort-down': sortField === 'category_name' && sortDirection === 'desc',
-                            }"></i>
-                            </div>
-                        </th>
-                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer"
-                            @click="sortBy('status')">
-                            <div class="flex items-center">
-                                Status
-                                <i class="fas fa-sort ml-1" :class="{
-                                'fa-sort-up': sortField === 'status' && sortDirection === 'asc',
-                                'fa-sort-down': sortField === 'status' && sortDirection === 'desc',
-                            }"></i>
-                            </div>
-                        </th>
-                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer"
-                            @click="sortBy('priority_name')">
-                            <div class="flex items-center">
-                                Priority
-                                <i class="fas fa-sort ml-1" :class="{
-                                'fa-sort-up': sortField === 'priority_name' && sortDirection === 'asc',
-                                'fa-sort-down': sortField === 'priority_name' && sortDirection === 'desc',
-                            }"></i>
-                            </div>
-                        </th>
-                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer"
-                            @click="sortBy('assigned_to_name')">
-                            <div class="flex items-center">
-                                Assigned To
-                                <i class="fas fa-sort ml-1" :class="{
-                                'fa-sort-up': sortField === 'assigned_to_name' && sortDirection === 'asc',
-                                'fa-sort-down': sortField === 'assigned_to_name' && sortDirection === 'desc',
-                            }"></i>
-                            </div>
-                        </th>
-                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer"
-                            @click="sortBy('created_at')">
-                            <div class="flex items-center">
-                                Created
-                                <i class="fas fa-sort ml-1" :class="{
-                                'fa-sort-up': sortField === 'created_at' && sortDirection === 'asc',
-                                'fa-sort-down': sortField === 'created_at' && sortDirection === 'desc',
-                            }"></i>
-                            </div>
-                        </th>
-                        <th class="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
-                            Actions
-                        </th>
-                    </tr>
-                </thead>
-                <tbody class="bg-white divide-y divide-gray-200">
-                    <template x-for="ticket in paginatedTickets" :key="ticket.id">
-                        <tr class="hover:bg-gray-50 transition-colors">
-                            <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900"
-                                x-text="ticket.id"></td>
-                            <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500" x-text="ticket.title"></td>
-                            <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500"
-                                x-text="ticket.category_name || 'Uncategorized'"></td>
-                            <td class="px-6 py-4 whitespace-nowrap text-sm">
-                                <span class="px-2 py-1 inline-flex text-xs leading-5 font-semibold rounded-full" :class="{
-                                      'bg-yellow-100 text-yellow-800': ticket.status === 'unseen',
-                                      'bg-blue-100 text-blue-800': ticket.status === 'seen',
-                                      'bg-green-100 text-green-800': ticket.status === 'resolved'
-                                  }" x-text="ticket.status === 'unseen' ? 'Unseen' : 
-                                          ticket.status === 'seen' ? 'Processing' : 'Resolved'">
-                                </span>
-                            </td>
-                            <td class="px-6 py-4 whitespace-nowrap text-sm">
-                                <span class="px-2 py-1 inline-flex text-xs leading-5 font-semibold rounded-full" :class="{
-                                      'bg-red-100 text-red-800': ticket.priority_name === 'High',
-                                      'bg-yellow-100 text-yellow-800': ticket.priority_name === 'Medium',
-                                      'bg-green-100 text-green-800': ticket.priority_name === 'Low'
-                                  }" x-text="ticket.priority_name || 'Unset'">
-                                </span>
-                            </td>
-                            <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500"
-                                x-text="ticket.assigned_to_name || 'Unassigned'"></td>
-                            <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500"
-                                x-text="formatDate(ticket.created_at)"></td>
-                            <td class="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
-                                <button @click="openTicketDetailsModal(ticket.id)"
-                                    class="text-blue-600 hover:text-blue-900 mr-3">
-                                    View
-                                </button>
-                                <button @click="editTicket(ticket.id)" class="text-green-600 hover:text-green-900 mr-3">
-                                    Edit
-                                </button>
-                                <button @click="deleteTicket(ticket.id)" class="text-red-600 hover:text-red-900">
-                                    Delete
-                                </button>
-                            </td>
-                        </tr>
-                    </template>
-                    <!-- Empty state when no tickets are found -->
-                    <tr x-show="paginatedTickets.length === 0">
-                        <td colspan="8" class="px-6 py-10 text-center text-gray-500">
-                            <div class="flex flex-col items-center">
-                                <i class="fas fa-ticket-alt text-4xl mb-3 text-gray-300"></i>
-                                <p class="text-lg font-medium">No tickets found</p>
-                                <p class="text-sm">Try adjusting your search or filter criteria</p>
-                            </div>
-                        </td>
-                    </tr>
-                </tbody>
-            </table>
-
-            <!-- Pagination Controls -->
-            <div class="bg-white px-4 py-3 flex items-center justify-between border-t border-gray-200 sm:px-6">
-                <div class="flex-1 flex justify-between sm:hidden">
-                    <button @click="prevPage()" :disabled="currentPage === 1"
-                        class="relative inline-flex items-center px-4 py-2 border border-gray-300 text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50"
-                        :class="{ 'opacity-50 cursor-not-allowed': currentPage === 1 }">
-                        Previous
-                    </button>
-                    <button @click="nextPage()" :disabled="currentPage >= totalPages"
-                        class="ml-3 relative inline-flex items-center px-4 py-2 border border-gray-300 text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50"
-                        :class="{ 'opacity-50 cursor-not-allowed': currentPage >= totalPages }">
-                        Next
-                    </button>
+            <!-- Additional filters row -->
+            <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mt-4">
+                <div>
+                    <label for="assignedToFilter" class="block text-sm font-medium text-gray-700 mb-1">Assigned
+                        To</label>
+                    <select id="assignedToFilter"
+                        class="mt-1 block w-full py-2 px-3 border border-gray-300 bg-white rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
+                        x-model="filters.assignedTo">
+                        <option value="">All Agents</option>
+                        <template x-for="staff in staffMembers" :key="staff.id">
+                            <option :value="staff.name" x-text="staff.name"></option>
+                        </template>
+                    </select>
                 </div>
-                <div class="hidden sm:flex-1 sm:flex sm:items-center sm:justify-between">
-                    <div>
-                        <p class="text-sm text-gray-700">
-                            Showing
-                            <span class="font-medium" x-text="(currentPage - 1) * itemsPerPage + 1"></span>
-                            to
-                            <span class="font-medium"
-                                x-text="Math.min(currentPage * itemsPerPage, filteredTickets.length)"></span>
-                            of
-                            <span class="font-medium" x-text="filteredTickets.length"></span>
-                            results
-                        </p>
-                    </div>
-                    <div>
-                        <nav class="relative z-0 inline-flex rounded-md shadow-sm -space-x-px" aria-label="Pagination">
-                            <button @click="prevPage()" :disabled="currentPage === 1"
-                                class="relative inline-flex items-center px-2 py-2 rounded-l-md border border-gray-300 bg-white text-sm font-medium text-gray-500 hover:bg-gray-50"
-                                :class="{ 'opacity-50 cursor-not-allowed': currentPage === 1 }">
-                                <span class="sr-only">Previous</span>
-                                <i class="fas fa-chevron-left h-5 w-5"></i>
-                            </button>
 
-                            <!-- Page number buttons (dynamic) -->
-                            <template x-for="page in pageNumbers" :key="page">
-                                <button @click="goToPage(page)"
-                                    class="relative inline-flex items-center px-4 py-2 border border-gray-300 bg-white text-sm font-medium hover:bg-gray-50"
-                                    :class="page === currentPage ? 'z-10 bg-blue-50 border-blue-500 text-blue-600' : 'text-gray-500'">
-                                    <span x-text="page"></span>
-                                </button>
-                            </template>
-
-                            <button @click="nextPage()" :disabled="currentPage >= totalPages"
-                                class="relative inline-flex items-center px-2 py-2 rounded-r-md border border-gray-300 bg-white text-sm font-medium text-gray-500 hover:bg-gray-50"
-                                :class="{ 'opacity-50 cursor-not-allowed': currentPage >= totalPages }">
-                                <span class="sr-only">Next</span>
-                                <i class="fas fa-chevron-right h-5 w-5"></i>
-                            </button>
-                        </nav>
-                    </div>
+                <!-- Reset filters button -->
+                <div class="flex items-end">
+                    <button @click="resetFilters()"
+                        class="inline-flex items-center px-4 py-2 border border-gray-300 text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50">
+                        <i class="fas fa-times-circle mr-2"></i>
+                        Reset Filters
+                    </button>
                 </div>
             </div>
         </div>
     </div>
 
-    <div x-data="ticketDetailsModal()" x-show="isOpen" class="fixed inset-0 z-50 overflow-y-auto" x-cloak>
-        <div class="flex items-center justify-center min-h-screen p-4">
-            <!-- Modal Backdrop -->
-            <div x-show="isOpen" x-transition:enter="transition ease-out duration-300"
-                x-transition:enter-start="opacity-0" x-transition:enter-end="opacity-100"
-                x-transition:leave="transition ease-in duration-200" x-transition:leave-start="opacity-100"
-                x-transition:leave-end="opacity-0" @click="closeModal()" class="fixed inset-0 bg-black bg-opacity-50">
+    <!-- All Tickets Table -->
+    <div class="bg-white rounded-lg shadow overflow-hidden">
+        <!-- Table Header -->
+        <table class="w-full">
+            <thead class="bg-gray-50">
+                <tr>
+                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer"
+                        @click="sortBy('id')">
+                        <div class="flex items-center">
+                            Ticket #
+                            <i class="fas fa-sort ml-1" :class="{
+                                'fa-sort-up': sortField === 'id' && sortDirection === 'asc',
+                                'fa-sort-down': sortField === 'id' && sortDirection === 'desc',
+                            }"></i>
+                        </div>
+                    </th>
+                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer"
+                        @click="sortBy('title')">
+                        <div class="flex items-center">
+                            Title
+                            <i class="fas fa-sort ml-1" :class="{
+                                'fa-sort-up': sortField === 'title' && sortDirection === 'asc',
+                                'fa-sort-down': sortField === 'title' && sortDirection === 'desc',
+                            }"></i>
+                        </div>
+                    </th>
+                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer"
+                        @click="sortBy('category_name')">
+                        <div class="flex items-center">
+                            Category
+                            <i class="fas fa-sort ml-1" :class="{
+                                'fa-sort-up': sortField === 'category_name' && sortDirection === 'asc',
+                                'fa-sort-down': sortField === 'category_name' && sortDirection === 'desc',
+                            }"></i>
+                        </div>
+                    </th>
+                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer"
+                        @click="sortBy('status')">
+                        <div class="flex items-center">
+                            Status
+                            <i class="fas fa-sort ml-1" :class="{
+                                'fa-sort-up': sortField === 'status' && sortDirection === 'asc',
+                                'fa-sort-down': sortField === 'status' && sortDirection === 'desc',
+                            }"></i>
+                        </div>
+                    </th>
+                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer"
+                        @click="sortBy('priority_name')">
+                        <div class="flex items-center">
+                            Priority
+                            <i class="fas fa-sort ml-1" :class="{
+                                'fa-sort-up': sortField === 'priority_name' && sortDirection === 'asc',
+                                'fa-sort-down': sortField === 'priority_name' && sortDirection === 'desc',
+                            }"></i>
+                        </div>
+                    </th>
+                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer"
+                        @click="sortBy('assigned_to_name')">
+                        <div class="flex items-center">
+                            Assigned To
+                            <i class="fas fa-sort ml-1" :class="{
+                                'fa-sort-up': sortField === 'assigned_to_name' && sortDirection === 'asc',
+                                'fa-sort-down': sortField === 'assigned_to_name' && sortDirection === 'desc',
+                            }"></i>
+                        </div>
+                    </th>
+                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer"
+                        @click="sortBy('created_at')">
+                        <div class="flex items-center">
+                            Created
+                            <i class="fas fa-sort ml-1" :class="{
+                                'fa-sort-up': sortField === 'created_at' && sortDirection === 'asc',
+                                'fa-sort-down': sortField === 'created_at' && sortDirection === 'desc',
+                            }"></i>
+                        </div>
+                    </th>
+                    <th class="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        Actions
+                    </th>
+                </tr>
+            </thead>
+            <tbody class="bg-white divide-y divide-gray-200">
+                <template x-for="ticket in paginatedTickets" :key="ticket.id">
+                    <tr class="hover:bg-gray-50 transition-colors">
+                        <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900" x-text="ticket.id">
+                        </td>
+                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500" x-text="ticket.title"></td>
+                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500"
+                            x-text="ticket.category_name || 'Uncategorized'"></td>
+                        <td class="px-6 py-4 whitespace-nowrap text-sm">
+                            <span class="px-2 py-1 inline-flex text-xs leading-5 font-semibold rounded-full" :class="{
+                                      'bg-yellow-100 text-yellow-800': ticket.status === 'unseen',
+                                      'bg-blue-100 text-blue-800': ticket.status === 'seen',
+                                      'bg-green-100 text-green-800': ticket.status === 'resolved'
+                                  }" x-text="ticket.status === 'unseen' ? 'Unseen' : 
+                                          ticket.status === 'seen' ? 'Processing' : 'Resolved'">
+                            </span>
+                        </td>
+                        <td class="px-6 py-4 whitespace-nowrap text-sm">
+                            <span class="px-2 py-1 inline-flex text-xs leading-5 font-semibold rounded-full" :class="{
+                                      'bg-red-100 text-red-800': ticket.priority_name === 'High',
+                                      'bg-yellow-100 text-yellow-800': ticket.priority_name === 'Medium',
+                                      'bg-green-100 text-green-800': ticket.priority_name === 'Low'
+                                  }" x-text="ticket.priority_name || 'Unset'">
+                            </span>
+                        </td>
+                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500"
+                            x-text="ticket.assigned_to_name || getStaffNameById(ticket.assigned_to) ">
+                        </td>
+                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500"
+                            x-text="formatDate(ticket.created_at)"></td>
+                        <td class="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
+                            <button @click="openTicketDetailsModal(ticket.id)"
+                                class="text-blue-600 hover:text-blue-900 mr-3">
+                                View
+                            </button>
+                            <button @click="editTicket(ticket.id)" class="text-green-600 hover:text-green-900 mr-3">
+                                Edit
+                            </button>
+                            <button @click="deleteTicket(ticket.id)" class="text-red-600 hover:text-red-900">
+                                Delete
+                            </button>
+                        </td>
+                    </tr>
+                </template>
+                <!-- Empty state when no tickets are found -->
+                <tr x-show="paginatedTickets.length === 0">
+                    <td colspan="8" class="px-6 py-10 text-center text-gray-500">
+                        <div class="flex flex-col items-center">
+                            <i class="fas fa-ticket-alt text-4xl mb-3 text-gray-300"></i>
+                            <p class="text-lg font-medium">No tickets found</p>
+                            <p class="text-sm">Try adjusting your search or filter criteria</p>
+                        </div>
+                    </td>
+                </tr>
+            </tbody>
+        </table>
+
+        <!-- Pagination Controls -->
+        <div class="bg-white px-4 py-3 flex items-center justify-between border-t border-gray-200 sm:px-6">
+            <div class="flex-1 flex justify-between sm:hidden">
+                <button @click="prevPage()" :disabled="currentPage === 1"
+                    class="relative inline-flex items-center px-4 py-2 border border-gray-300 text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50"
+                    :class="{ 'opacity-50 cursor-not-allowed': currentPage === 1 }">
+                    Previous
+                </button>
+                <button @click="nextPage()" :disabled="currentPage >= totalPages"
+                    class="ml-3 relative inline-flex items-center px-4 py-2 border border-gray-300 text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50"
+                    :class="{ 'opacity-50 cursor-not-allowed': currentPage >= totalPages }">
+                    Next
+                </button>
+            </div>
+            <div class="hidden sm:flex-1 sm:flex sm:items-center sm:justify-between">
+                <div>
+                    <p class="text-sm text-gray-700">
+                        Showing
+                        <span class="font-medium" x-text="(currentPage - 1) * itemsPerPage + 1"></span>
+                        to
+                        <span class="font-medium"
+                            x-text="Math.min(currentPage * itemsPerPage, filteredTickets.length)"></span>
+                        of
+                        <span class="font-medium" x-text="filteredTickets.length"></span>
+                        results
+                    </p>
+                </div>
+                <div>
+                    <nav class="relative z-0 inline-flex rounded-md shadow-sm -space-x-px" aria-label="Pagination">
+                        <button @click="prevPage()" :disabled="currentPage === 1"
+                            class="relative inline-flex items-center px-2 py-2 rounded-l-md border border-gray-300 bg-white text-sm font-medium text-gray-500 hover:bg-gray-50"
+                            :class="{ 'opacity-50 cursor-not-allowed': currentPage === 1 }">
+                            <span class="sr-only">Previous</span>
+                            <i class="fas fa-chevron-left h-5 w-5"></i>
+                        </button>
+
+                        <!-- Page number buttons (dynamic) -->
+                        <template x-for="page in pageNumbers" :key="page">
+                            <button @click="goToPage(page)"
+                                class="relative inline-flex items-center px-4 py-2 border border-gray-300 bg-white text-sm font-medium hover:bg-gray-50"
+                                :class="page === currentPage ? 'z-10 bg-blue-50 border-blue-500 text-blue-600' : 'text-gray-500'">
+                                <span x-text="page"></span>
+                            </button>
+                        </template>
+
+                        <button @click="nextPage()" :disabled="currentPage >= totalPages"
+                            class="relative inline-flex items-center px-2 py-2 rounded-r-md border border-gray-300 bg-white text-sm font-medium text-gray-500 hover:bg-gray-50"
+                            :class="{ 'opacity-50 cursor-not-allowed': currentPage >= totalPages }">
+                            <span class="sr-only">Next</span>
+                            <i class="fas fa-chevron-right h-5 w-5"></i>
+                        </button>
+                    </nav>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div x-data="ticketDetailsModal()" x-show="isOpen" class="fixed inset-0 z-50 overflow-y-auto" x-cloak>
+    <div class="flex items-center justify-center min-h-screen p-4">
+        <!-- Modal Backdrop -->
+        <div x-show="isOpen" x-transition:enter="transition ease-out duration-300" x-transition:enter-start="opacity-0"
+            x-transition:enter-end="opacity-100" x-transition:leave="transition ease-in duration-200"
+            x-transition:leave-start="opacity-100" x-transition:leave-end="opacity-0" @click="closeModal()"
+            class="fixed inset-0 bg-black bg-opacity-50">
+        </div>
+
+        <!-- Modal Content -->
+        <div x-show="isOpen" x-transition:enter="transition ease-out duration-300"
+            x-transition:enter-start="opacity-0 transform scale-95"
+            x-transition:enter-end="opacity-100 transform scale-100"
+            x-transition:leave="transition ease-in duration-200"
+            x-transition:leave-start="opacity-100 transform scale-100"
+            x-transition:leave-end="opacity-0 transform scale-95"
+            class="relative bg-white rounded-lg shadow-xl w-full max-w-4xl mx-auto max-h-[90vh] overflow-y-auto">
+
+            <div class="flex justify-between items-center p-4 border-b border-gray-200 sticky top-0 bg-white z-10">
+                <h2 class="text-xl font-bold text-gray-800" x-text="'Ticket #' + (currentTicket?.id || '')"></h2>
+                <div class="flex items-center space-x-4">
+                    <button @click="archiveTicket()"
+                        class="bg-amber-500 hover:bg-amber-600 text-white px-4 py-2 rounded">
+                        <i class="fas fa-archive mr-2"></i>Archive
+                    </button>
+                    <button @click="closeModal()" class="text-gray-500 hover:text-gray-700">
+                        <i class="fas fa-times text-xl"></i>
+                    </button>
+                </div>
             </div>
 
-            <!-- Modal Content -->
-            <div x-show="isOpen" x-transition:enter="transition ease-out duration-300"
-                x-transition:enter-start="opacity-0 transform scale-95"
-                x-transition:enter-end="opacity-100 transform scale-100"
-                x-transition:leave="transition ease-in duration-200"
-                x-transition:leave-start="opacity-100 transform scale-100"
-                x-transition:leave-end="opacity-0 transform scale-95"
-                class="relative bg-white rounded-lg shadow-xl w-full max-w-4xl mx-auto max-h-[90vh] overflow-y-auto">
-
-                <div class="flex justify-between items-center p-4 border-b border-gray-200 sticky top-0 bg-white z-10">
-                    <h2 class="text-xl font-bold text-gray-800" x-text="'Ticket #' + (currentTicket?.id || '')"></h2>
-                    <div class="flex items-center space-x-4">
-                        <button @click="archiveTicket()"
-                            class="bg-amber-500 hover:bg-amber-600 text-white px-4 py-2 rounded">
-                            <i class="fas fa-archive mr-2"></i>Archive
-                        </button>
-                        <button @click="closeModal()" class="text-gray-500 hover:text-gray-700">
-                            <i class="fas fa-times text-xl"></i>
-                        </button>
-                    </div>
-                </div>
-
-                <div class="p-6 grid grid-cols-3 gap-6">
-                    <!-- Left Column - Ticket Details -->
-                    <div class="col-span-2 space-y-6">
-                        <!-- Ticket Info -->
-                        <div class="bg-gray-50 p-4 rounded-lg">
-                            <h3 class="text-lg font-semibold mb-2" x-text="currentTicket?.title || 'Loading...'"></h3>
-                            <div class="grid grid-cols-2 gap-4 mb-4">
-                                <div>
-                                    <p class="text-sm text-gray-600"><strong>Created:</strong> <span
-                                            x-text="formatDate(currentTicket?.created_at)"></span></p>
-                                    <p class="text-sm text-gray-600"><strong>Status:</strong> <span
-                                            x-text="currentTicket?.status || 'Unknown'"></span></p>
-                                    <p class="text-sm text-gray-600"><strong>Priority:</strong> <span
-                                            x-text="currentTicket?.priority_name || 'Unknown'"></span></p>
-                                </div>
-                                <div>
-                                    <p class="text-sm text-gray-600"><strong>Category:</strong> <span
-                                            x-text="currentTicket?.category_name || 'Unknown'"></span></p>
-                                    <p class="text-sm text-gray-600"><strong>Assigned To:</strong> <span
-                                            x-text="currentTicket?.assigned_to_name || 'Unassigned'"></span></p>
-                                    <p class="text-sm text-gray-600"><strong>Created By:</strong> <span
-                                            x-text="currentTicket?.created_by_name || 'Unknown'"></span></p>
-                                </div>
+            <div class="p-6 grid grid-cols-3 gap-6">
+                <!-- Left Column - Ticket Details -->
+                <div class="col-span-2 space-y-6">
+                    <!-- Ticket Info -->
+                    <div class="bg-gray-50 p-4 rounded-lg">
+                        <h3 class="text-lg font-semibold mb-2" x-text="currentTicket?.title || 'Loading...'"></h3>
+                        <div class="grid grid-cols-2 gap-4 mb-4">
+                            <div>
+                                <p class="text-sm text-gray-600"><strong>Created:</strong> <span
+                                        x-text="formatDate(currentTicket?.created_at)"></span></p>
+                                <p class="text-sm text-gray-600"><strong>Status:</strong> <span
+                                        x-text="currentTicket?.status || 'Unknown'"></span></p>
+                                <p class="text-sm text-gray-600"><strong>Priority:</strong> <span
+                                        x-text="currentTicket?.priority_name || 'Unknown'"></span></p>
                             </div>
                             <div>
-                                <h4 class="font-medium mb-1">Description:</h4>
-                                <div class="p-3 bg-white rounded border border-gray-200 text-sm"
-                                    x-html="currentTicket?.description || 'No description provided.'"></div>
+                                <p class="text-sm text-gray-600"><strong>Category:</strong> <span
+                                        x-text="currentTicket?.category_name || 'Unknown'"></span></p>
+                                <p class="text-sm text-gray-600"><strong>Assigned To:</strong> <span
+                                        x-text="currentTicket?.assigned_to_name || 'Unassigned'"></span></p>
+                                <p class="text-sm text-gray-600"><strong>Created By:</strong> <span
+                                        x-text="currentTicket?.created_by_name || 'Unknown'"></span></p>
                             </div>
                         </div>
-
-                        <!-- Ticket Activity Timeline -->
                         <div>
-                            <h3 class="text-lg font-semibold mb-4">Activity & Comments</h3>
-                            <div class="space-y-4">
-                                <template x-for="(activity, index) in ticketHistory" :key="index">
-                                    <div class="p-4 border border-gray-200 rounded-lg">
-                                        <div class="flex justify-between items-start">
-                                            <div class="flex items-center">
-                                                <div
-                                                    class="w-10 h-10 rounded-full bg-blue-100 flex items-center justify-center mr-3">
-                                                    <span class="font-semibold text-blue-700"
-                                                        x-text="activity.user_name?.charAt(0) || 'U'"></span>
-                                                </div>
-                                                <div>
-                                                    <p class="font-medium"
-                                                        x-text="activity.user_name || 'Unknown User'"></p>
-                                                    <p class="text-xs text-gray-500"
-                                                        x-text="formatDate(activity.created_at)"></p>
-                                                </div>
+                            <h4 class="font-medium mb-1">Description:</h4>
+                            <div class="p-3 bg-white rounded border border-gray-200 text-sm"
+                                x-html="currentTicket?.description || 'No description provided.'"></div>
+                        </div>
+                    </div>
+
+                    <!-- Ticket Activity Timeline -->
+                    <div>
+                        <h3 class="text-lg font-semibold mb-4">Activity & Comments</h3>
+                        <div class="space-y-4">
+                            <template x-for="(activity, index) in ticketHistory" :key="index">
+                                <div class="p-4 border border-gray-200 rounded-lg">
+                                    <div class="flex justify-between items-start">
+                                        <div class="flex items-center">
+                                            <div
+                                                class="w-10 h-10 rounded-full bg-blue-100 flex items-center justify-center mr-3">
+                                                <span class="font-semibold text-blue-700"
+                                                    x-text="activity.user_name?.charAt(0) || 'U'"></span>
                                             </div>
                                             <div>
-                                                <span class="text-xs px-2 py-1 rounded" :class="{
+                                                <p class="font-medium" x-text="activity.user_name || 'Unknown User'">
+                                                </p>
+                                                <p class="text-xs text-gray-500"
+                                                    x-text="formatDate(activity.created_at)"></p>
+                                            </div>
+                                        </div>
+                                        <div>
+                                            <span class="text-xs px-2 py-1 rounded" :class="{
                                                     'bg-purple-100 text-purple-800': activity.type === 'comment',
                                                     'bg-blue-100 text-blue-800': activity.type === 'status_change',
                                                     'bg-green-100 text-green-800': activity.type === 'assignment',
@@ -1819,228 +1893,224 @@ $pastDueCount = count(array_filter($tickets, function ($ticket) {
                                                     'bg-orange-100 text-orange-800': activity.type === 'priority_change',
                                                     'bg-red-100 text-red-800': activity.type === 'archive'
                                                 }" x-text="activity.type.replace('_', ' ')"></span>
-                                            </div>
-                                        </div>
-
-                                        <!-- Comment content -->
-                                        <div class="mt-3 email-content bg-gray-50 p-3 rounded"
-                                            x-show="activity.type === 'comment'" x-html="activity.content"></div>
-
-                                        <!-- Status change -->
-                                        <div class="mt-3 text-gray-700" x-show="activity.type === 'status_change'">
-                                            Changed status from <span class="font-medium"
-                                                x-text="activity.old_value"></span> to
-                                            <span class="font-medium" x-text="activity.new_value"></span>
-                                        </div>
-
-                                        <!-- Priority change -->
-                                        <div class="mt-3 text-gray-700" x-show="activity.type === 'priority_change'">
-                                            Changed priority from <span class="font-medium"
-                                                x-text="activity.old_value"></span> to
-                                            <span class="font-medium" x-text="activity.new_value"></span>
-                                        </div>
-
-                                        <!-- Assignment -->
-                                        <div class="mt-3 text-gray-700" x-show="activity.type === 'assignment'">
-                                            Assigned ticket to <span class="font-medium"
-                                                x-text="activity.new_value"></span>
-                                        </div>
-
-                                        <!-- Attachment -->
-                                        <div class="mt-3" x-show="activity.type === 'attachment'">
-                                            <div class="flex items-center p-2 bg-white border border-gray-200 rounded">
-                                                <i class="fas fa-paperclip mr-2 text-gray-500"></i>
-                                                <span class="text-blue-600 hover:underline cursor-pointer"
-                                                    x-text="activity.new_value"></span>
-                                            </div>
-                                        </div>
-
-                                        <!-- Archive -->
-                                        <div class="mt-3 text-gray-700" x-show="activity.type === 'archive'">
-                                            <span class="font-medium" x-text="activity.new_value"></span>
                                         </div>
                                     </div>
-                                </template>
+
+                                    <!-- Comment content -->
+                                    <div class="mt-3 email-content bg-gray-50 p-3 rounded"
+                                        x-show="activity.type === 'comment'" x-html="activity.content"></div>
+
+                                    <!-- Status change -->
+                                    <div class="mt-3 text-gray-700" x-show="activity.type === 'status_change'">
+                                        Changed status from <span class="font-medium"
+                                            x-text="activity.old_value"></span> to
+                                        <span class="font-medium" x-text="activity.new_value"></span>
+                                    </div>
+
+                                    <!-- Priority change -->
+                                    <div class="mt-3 text-gray-700" x-show="activity.type === 'priority_change'">
+                                        Changed priority from <span class="font-medium"
+                                            x-text="activity.old_value"></span> to
+                                        <span class="font-medium" x-text="activity.new_value"></span>
+                                    </div>
+
+                                    <!-- Assignment -->
+                                    <div class="mt-3 text-gray-700" x-show="activity.type === 'assignment'">
+                                        Assigned ticket to <span class="font-medium" x-text="activity.new_value"></span>
+                                    </div>
+
+                                    <!-- Attachment -->
+                                    <div class="mt-3" x-show="activity.type === 'attachment'">
+                                        <div class="flex items-center p-2 bg-white border border-gray-200 rounded">
+                                            <i class="fas fa-paperclip mr-2 text-gray-500"></i>
+                                            <span class="text-blue-600 hover:underline cursor-pointer"
+                                                x-text="activity.new_value"></span>
+                                        </div>
+                                    </div>
+
+                                    <!-- Archive -->
+                                    <div class="mt-3 text-gray-700" x-show="activity.type === 'archive'">
+                                        <span class="font-medium" x-text="activity.new_value"></span>
+                                    </div>
+                                </div>
+                            </template>
+                        </div>
+                    </div>
+
+                    <!-- Add Comment Section -->
+                    <div class="bg-white border border-gray-200 rounded-lg p-4">
+                        <h3 class="text-lg font-semibold mb-2">Add Response</h3>
+
+                        <!-- Rich Text Editor Toolbar -->
+                        <div class="border border-gray-300 rounded-t-lg p-2 bg-gray-50 flex items-center space-x-2">
+                            <button @click="formatText('bold')" class="p-1 hover:bg-gray-200 rounded" title="Bold">
+                                <i class="fas fa-bold"></i>
+                            </button>
+                            <button @click="formatText('italic')" class="p-1 hover:bg-gray-200 rounded" title="Italic">
+                                <i class="fas fa-italic"></i>
+                            </button>
+                            <button @click="formatText('underline')" class="p-1 hover:bg-gray-200 rounded"
+                                title="Underline">
+                                <i class="fas fa-underline"></i>
+                            </button>
+                            <div class="h-6 border-r border-gray-300"></div>
+                            <button @click="formatText('link')" class="p-1 hover:bg-gray-200 rounded"
+                                title="Insert Link">
+                                <i class="fas fa-link"></i>
+                            </button>
+                            <button @click="addAttachment()" class="p-1 hover:bg-gray-200 rounded"
+                                title="Add Attachment">
+                                <i class="fas fa-paperclip"></i>
+                            </button>
+                            <div class="h-6 border-r border-gray-300"></div>
+                            <button @click="formatText('heading')" class="p-1 hover:bg-gray-200 rounded"
+                                title="Heading">
+                                <i class="fas fa-heading"></i>
+                            </button>
+                            <button @click="formatText('list-ul')" class="p-1 hover:bg-gray-200 rounded"
+                                title="Bullet List">
+                                <i class="fas fa-list-ul"></i>
+                            </button>
+                            <button @click="formatText('list-ol')" class="p-1 hover:bg-gray-200 rounded"
+                                title="Numbered List">
+                                <i class="fas fa-list-ol"></i>
+                            </button>
+                        </div>
+
+                        <!-- Editor -->
+                        <div class="border border-t-0 border-gray-300 rounded-b-lg p-3 min-h-[150px]"
+                            x-ref="commentEditor" contenteditable="true" placeholder="Type your response here...">
+                        </div>
+
+                        <div x-show="attachments.length > 0" class="mt-3 space-y-2">
+                            <h4 class="text-sm font-medium">Attachments:</h4>
+                            <template x-for="(attachment, index) in attachments" :key="index">
+                                <div class="flex items-center justify-between bg-gray-50 p-2 rounded">
+                                    <div class="flex items-center">
+                                        <i class="fas fa-file mr-2 text-gray-500"></i>
+                                        <span x-text="attachment.name"></span>
+                                    </div>
+                                    <button @click="removeAttachment(index)" class="text-red-500 hover:text-red-700">
+                                        <i class="fas fa-times"></i>
+                                    </button>
+                                </div>
+                            </template>
+                        </div>
+
+                        <div class="mt-4 flex justify-end space-x-3">
+                            <button @click="addComment(true)"
+                                class="bg-gray-500 hover:bg-gray-600 text-white px-4 py-2 rounded">
+                                Internal Note
+                            </button>
+                            <button @click="addComment(false)"
+                                class="bg-blue-500 hover:bg-blue-600 text-white px-4 py-2 rounded">
+                                Post Reply
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Right Column - Actions & Info -->
+                <div class="col-span-1 space-y-6">
+                    <!-- Ticket Actions -->
+                    <div class="bg-white border border-gray-200 rounded-lg p-4">
+                        <h3 class="text-lg font-semibold mb-4">Ticket Actions</h3>
+
+                        <!-- Status Update -->
+                        <div class="mb-4">
+                            <h4 class="font-medium mb-2">Update Status</h4>
+                            <div class="flex flex-wrap gap-2">
+                                <button @click="updateStatus('unseen')" class="px-3 py-1 text-sm rounded-full"
+                                    :class="currentTicket?.status === 'unseen' ? 'bg-green-500 text-white' : 'bg-gray-200 hover:bg-gray-300'">
+                                    Open
+                                </button>
+                                <button @click="updateStatus('seen')" class="px-3 py-1 text-sm rounded-full"
+                                    :class="currentTicket?.status === 'seen' ? 'bg-blue-500 text-white' : 'bg-gray-200 hover:bg-gray-300'">
+                                    In Progress
+                                </button>
+                                <button @click="updateStatus('pending')" class="px-3 py-1 text-sm rounded-full"
+                                    :class="currentTicket?.status === 'pending' ? 'bg-yellow-500 text-white' : 'bg-gray-200 hover:bg-gray-300'">
+                                    Pending
+                                </button>
+                                <button @click="updateStatus('resolved')" class="px-3 py-1 text-sm rounded-full"
+                                    :class="currentTicket?.status === 'resolved' ? 'bg-purple-500 text-white' : 'bg-gray-200 hover:bg-gray-300'">
+                                    Resolved
+                                </button>
+                                <button @click="updateStatus('resolved')" class="px-3 py-1 text-sm rounded-full"
+                                    :class="currentTicket?.status === 'resolved' ? 'bg-gray-600 text-white' : 'bg-gray-200 hover:bg-gray-300'">
+                                    Closed
+                                </button>
                             </div>
                         </div>
 
-                        <!-- Add Comment Section -->
-                        <div class="bg-white border border-gray-200 rounded-lg p-4">
-                            <h3 class="text-lg font-semibold mb-2">Add Response</h3>
-
-                            <!-- Rich Text Editor Toolbar -->
-                            <div class="border border-gray-300 rounded-t-lg p-2 bg-gray-50 flex items-center space-x-2">
-                                <button @click="formatText('bold')" class="p-1 hover:bg-gray-200 rounded" title="Bold">
-                                    <i class="fas fa-bold"></i>
-                                </button>
-                                <button @click="formatText('italic')" class="p-1 hover:bg-gray-200 rounded"
-                                    title="Italic">
-                                    <i class="fas fa-italic"></i>
-                                </button>
-                                <button @click="formatText('underline')" class="p-1 hover:bg-gray-200 rounded"
-                                    title="Underline">
-                                    <i class="fas fa-underline"></i>
-                                </button>
-                                <div class="h-6 border-r border-gray-300"></div>
-                                <button @click="formatText('link')" class="p-1 hover:bg-gray-200 rounded"
-                                    title="Insert Link">
-                                    <i class="fas fa-link"></i>
-                                </button>
-                                <button @click="addAttachment()" class="p-1 hover:bg-gray-200 rounded"
-                                    title="Add Attachment">
-                                    <i class="fas fa-paperclip"></i>
-                                </button>
-                                <div class="h-6 border-r border-gray-300"></div>
-                                <button @click="formatText('heading')" class="p-1 hover:bg-gray-200 rounded"
-                                    title="Heading">
-                                    <i class="fas fa-heading"></i>
-                                </button>
-                                <button @click="formatText('list-ul')" class="p-1 hover:bg-gray-200 rounded"
-                                    title="Bullet List">
-                                    <i class="fas fa-list-ul"></i>
-                                </button>
-                                <button @click="formatText('list-ol')" class="p-1 hover:bg-gray-200 rounded"
-                                    title="Numbered List">
-                                    <i class="fas fa-list-ol"></i>
-                                </button>
-                            </div>
-
-                            <!-- Editor -->
-                            <div class="border border-t-0 border-gray-300 rounded-b-lg p-3 min-h-[150px]"
-                                x-ref="commentEditor" contenteditable="true" placeholder="Type your response here...">
-                            </div>
-
-                            <!-- Attachments Preview -->
-                            <div x-show="attachments.length > 0" class="mt-3 space-y-2">
-                                <h4 class="text-sm font-medium">Attachments:</h4>
-                                <template x-for="(attachment, index) in attachments" :key="index">
-                                    <div class="flex items-center justify-between bg-gray-50 p-2 rounded">
-                                        <div class="flex items-center">
-                                            <i class="fas fa-file mr-2 text-gray-500"></i>
-                                            <span x-text="attachment.name"></span>
-                                        </div>
-                                        <button @click="removeAttachment(index)"
-                                            class="text-red-500 hover:text-red-700">
-                                            <i class="fas fa-times"></i>
-                                        </button>
-                                    </div>
+                        <!-- Priority Update -->
+                        <div class="mb-4">
+                            <h4 class="font-medium mb-2">Update Priority</h4>
+                            <select @change="updatePriority($event.target.value)"
+                                class="w-full p-2 border border-gray-300 rounded" :value="currentTicket?.priority_id">
+                                <template x-for="priority in priorities" :key="priority.id">
+                                    <option :value="priority.id" x-text="priority.name"></option>
                                 </template>
-                            </div>
+                            </select>
+                        </div>
 
-                            <!-- Add Comment Buttons -->
-                            <div class="mt-4 flex justify-end space-x-3">
-                                <button @click="addComment(true)"
-                                    class="bg-gray-500 hover:bg-gray-600 text-white px-4 py-2 rounded">
-                                    Internal Note
-                                </button>
-                                <button @click="addComment(false)"
-                                    class="bg-blue-500 hover:bg-blue-600 text-white px-4 py-2 rounded">
-                                    Post Reply
-                                </button>
+                        <!-- Assign Ticket -->
+                        <div>
+                            <h4 class="font-medium mb-2">Assign To</h4>
+                            <select @change="assignTicket($event.target.value)"
+                                class="w-full p-2 border border-gray-300 rounded" :value="currentTicket?.assigned_to">
+                                <option value="">-- Unassigned --</option>
+                                <template x-for="user in assignableUsers" :key="user.id">
+                                    <option :value="user.id" x-text="user.name"></option>
+                                </template>
+                            </select>
+                        </div>
+                    </div>
+
+                    <!-- Ticket Attachments -->
+                    <div class="bg-white border border-gray-200 rounded-lg p-4">
+                        <h3 class="text-lg font-semibold mb-3">Attachments</h3>
+                        <button @click="addAttachment()"
+                            class="w-full flex items-center justify-center p-2 mb-3 bg-gray-100 hover:bg-gray-200 border border-dashed border-gray-300 rounded">
+                            <i class="fas fa-plus-circle mr-2"></i> Add Attachment
+                        </button>
+
+                        <div class="space-y-2">
+                            <template x-for="(attachment, index) in attachments" :key="index">
+                                <div
+                                    class="p-2 bg-gray-50 rounded border border-gray-200 flex items-center justify-between">
+                                    <div class="flex items-center overflow-hidden">
+                                        <i class="fas fa-paperclip mr-2 text-gray-500"></i>
+                                        <span class="text-sm truncate" x-text="attachment.filename"></span>
+                                    </div>
+                                    <a :href="attachment.file_path"
+                                        class="ml-2 text-gray-500 hover:text-blue-600 transition-colors p-1" download
+                                        @click.stop="downloadAttachment(attachment)" title="Download attachment">
+                                        <i class="fas fa-download"></i>
+                                    </a>
+                                </div>
+                            </template>
+                            <div x-show="attachments.length === 0" class="text-gray-500 text-sm text-center py-2">
+                                No attachments
                             </div>
                         </div>
                     </div>
 
-                    <!-- Right Column - Actions & Info -->
-                    <div class="col-span-1 space-y-6">
-                        <!-- Ticket Actions -->
-                        <div class="bg-white border border-gray-200 rounded-lg p-4">
-                            <h3 class="text-lg font-semibold mb-4">Ticket Actions</h3>
-
-                            <!-- Status Update -->
-                            <div class="mb-4">
-                                <h4 class="font-medium mb-2">Update Status</h4>
-                                <div class="flex flex-wrap gap-2">
-                                    <button @click="updateStatus('unseen')" class="px-3 py-1 text-sm rounded-full"
-                                        :class="currentTicket?.status === 'unseen' ? 'bg-green-500 text-white' : 'bg-gray-200 hover:bg-gray-300'">
-                                        Open
-                                    </button>
-                                    <button @click="updateStatus('seen')" class="px-3 py-1 text-sm rounded-full"
-                                        :class="currentTicket?.status === 'seen' ? 'bg-blue-500 text-white' : 'bg-gray-200 hover:bg-gray-300'">
-                                        In Progress
-                                    </button>
-                                    <button @click="updateStatus('pending')" class="px-3 py-1 text-sm rounded-full"
-                                        :class="currentTicket?.status === 'pending' ? 'bg-yellow-500 text-white' : 'bg-gray-200 hover:bg-gray-300'">
-                                        Pending
-                                    </button>
-                                    <button @click="updateStatus('resolved')" class="px-3 py-1 text-sm rounded-full"
-                                        :class="currentTicket?.status === 'resolved' ? 'bg-purple-500 text-white' : 'bg-gray-200 hover:bg-gray-300'">
-                                        Resolved
-                                    </button>
-                                    <button @click="updateStatus('resolved')" class="px-3 py-1 text-sm rounded-full"
-                                        :class="currentTicket?.status === 'resolved' ? 'bg-gray-600 text-white' : 'bg-gray-200 hover:bg-gray-300'">
-                                        Closed
-                                    </button>
-                                </div>
-                            </div>
-
-                            <!-- Priority Update -->
-                            <div class="mb-4">
-                                <h4 class="font-medium mb-2">Update Priority</h4>
-                                <select @change="updatePriority($event.target.value)"
-                                    class="w-full p-2 border border-gray-300 rounded"
-                                    :value="currentTicket?.priority_id">
-                                    <template x-for="priority in priorities" :key="priority.id">
-                                        <option :value="priority.id" x-text="priority.name"></option>
-                                    </template>
-                                </select>
-                            </div>
-
-                            <!-- Assign Ticket -->
-                            <div>
-                                <h4 class="font-medium mb-2">Assign To</h4>
-                                <select @change="assignTicket($event.target.value)"
-                                    class="w-full p-2 border border-gray-300 rounded"
-                                    :value="currentTicket?.assigned_to">
-                                    <option value="">-- Unassigned --</option>
-                                    <template x-for="user in assignableUsers" :key="user.id">
-                                        <option :value="user.id" x-text="user.name"></option>
-                                    </template>
-                                </select>
-                            </div>
-                        </div>
-
-                        <!-- Ticket Attachments -->
-                        <div class="bg-white border border-gray-200 rounded-lg p-4">
-                            <h3 class="text-lg font-semibold mb-3">Attachments</h3>
-                            <button @click="addAttachment()"
-                                class="w-full flex items-center justify-center p-2 mb-3 bg-gray-100 hover:bg-gray-200 border border-dashed border-gray-300 rounded">
-                                <i class="fas fa-plus-circle mr-2"></i> Add Attachment
-                            </button>
-
-                            <!-- List of existing attachments -->
-                            <div class="space-y-2">
-                                <template
-                                    x-for="(attachment, index) in ticketHistory.filter(item => item.type === 'attachment')"
-                                    :key="index">
-                                    <div class="p-2 bg-gray-50 rounded border border-gray-200 flex items-center">
-                                        <i class="fas fa-paperclip mr-2 text-gray-500"></i>
-                                        <span class="text-sm text-blue-600 hover:underline truncate"
-                                            x-text="attachment.new_value"></span>
-                                    </div>
-                                </template>
-                                <div x-show="!ticketHistory.some(item => item.type === 'attachment')"
-                                    class="text-gray-500 text-sm text-center py-2">
-                                    No attachments
-                                </div>
-                            </div>
-                        </div>
-
-                        <!-- Related Information -->
-                        <div class="bg-white border border-gray-200 rounded-lg p-4">
-                            <h3 class="text-lg font-semibold mb-3">Additional Information</h3>
-                            <div class="space-y-2 text-sm">
-                                <p><strong>Last Updated:</strong> <span
-                                        x-text="formatDate(currentTicket?.updated_at)"></span></p>
-                                <p><strong>SLA Status:</strong> <span class="text-green-600">Within SLA</span></p>
-                                <p><strong>Department:</strong> <span
-                                        x-text="currentTicket?.department || 'N/A'"></span></p>
-                                <p><strong>Product:</strong> <span x-text="currentTicket?.product || 'N/A'"></span></p>
-                            </div>
+                    <!-- Related Information -->
+                    <div class="bg-white border border-gray-200 rounded-lg p-4">
+                        <h3 class="text-lg font-semibold mb-3">Additional Information</h3>
+                        <div class="space-y-2 text-sm">
+                            <p><strong>Last Updated:</strong> <span
+                                    x-text="formatDate(currentTicket?.updated_at)"></span></p>
+                            <p><strong>SLA Status:</strong> <span class="text-green-600">Within SLA</span></p>
+                            <p><strong>Department:</strong> <span x-text="currentTicket?.department || 'N/A'"></span>
+                            </p>
+                            <p><strong>Product:</strong> <span x-text="currentTicket?.product || 'N/A'"></span></p>
                         </div>
                     </div>
                 </div>
             </div>
         </div>
     </div>
+</div>
 </div>

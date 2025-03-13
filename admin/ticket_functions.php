@@ -76,9 +76,9 @@ function get_ticket_attachments($ticket_id)
 
     $ticket_id = $db->real_escape_string($ticket_id);
 
-    $query = "SELECT * FROM ticket_attachments
+    $query = "SELECT * FROM attachments
               WHERE ticket_id = '$ticket_id'
-              ORDER BY upload_date DESC";
+              ORDER BY created_at DESC";
 
     $result = $db->query($query);
 
@@ -224,37 +224,64 @@ function assign_ticket($ticket_id, $admin_user_id, $assignee_id)
     return false;
 }
 
-function add_ticket_attachment($ticket_id, $user_id, $filename, $file_path, $file_size)
+function add_ticket_attachment($ticket_id, $uploader_id, $filename, $file_path, $file_size)
 {
     $db = db_connect();
 
-    $ticket_id = $db->real_escape_string($ticket_id);
-    $user_id = $db->real_escape_string($user_id);
-    $filename = $db->real_escape_string($filename);
-    $file_path = $db->real_escape_string($file_path);
-    $file_size = $db->real_escape_string($file_size);
+    try {
+        // Basic sanitization
+        $ticket_id = (int) $ticket_id;
+        $uploader_id = (int) $uploader_id;
+        $file_path = addslashes($file_path); // Use addslashes instead of real_escape_string
 
+        // Default values
+        $uploaded_by_user_id = 'NULL';
+        $uploaded_by_staff_member_id = 'NULL';
+        $uploaded_by_guest_email = 'NULL';
 
-    $query = "INSERT INTO ticket_attachments 
-             (ticket_id, filename, file_path, filesize, upload_date)
-             VALUES 
-             ('$ticket_id', '$filename', '$file_path', '$file_size', NOW())";
-    $result = $db->query($query);
+        // Check if the uploader is a staff member
+        $staff_query = "SELECT id FROM staff_members WHERE id = $uploader_id LIMIT 1";
+        $staff_result = $db->query($staff_query);
 
-    if ($result) {
-        $attachment_id = $db->insert_id;
+        if ($staff_result && $staff_result->num_rows > 0) {
+            // Uploader is a staff member
+            $uploaded_by_staff_member_id = $uploader_id;
+        } else {
+            // Check if uploader is a registered user
+            $user_query = "SELECT id FROM users WHERE id = $uploader_id LIMIT 1";
+            $user_result = $db->query($user_query);
 
+            if ($user_result && $user_result->num_rows > 0) {
+                // Uploader is a registered user
+                $uploaded_by_user_id = $uploader_id;
+            } else {
+                // Uploader might be a guest
+                // If you have guest email in session
+                if (isset($_SESSION['guest_email'])) {
+                    $guest_email = addslashes($_SESSION['guest_email']);
+                    $uploaded_by_guest_email = "'$guest_email'";
+                }
+            }
+        }
 
-        $history_query = "INSERT INTO ticket_history 
-                         (ticket_id, user_id, type, new_value, created_at)
-                         VALUES 
-                         ('$ticket_id', '$user_id', 'attachment', '$filename', NOW())";
-        $db->query($history_query);
+        $query = "INSERT INTO attachments 
+                 (ticket_id, file_path, filename, uploaded_by_user_id, uploaded_by_staff_member_id, uploaded_by_guest_email, created_at) 
+                 VALUES 
+                 ($ticket_id, '$file_path', '$filename', $uploaded_by_user_id, $uploaded_by_staff_member_id, $uploaded_by_guest_email, CURRENT_TIMESTAMP())";
 
-        return $attachment_id;
+        $result = $db->query($query);
+
+        if ($result) {
+            return $db->insert_id;
+        } else {
+            error_log("Database error in add_ticket_attachment: " . $db->error);
+            error_log("Failed query: $query");
+            return false;
+        }
+    } catch (Exception $e) {
+        error_log("Exception in add_ticket_attachment: " . $e->getMessage());
+        return false;
     }
-
-    return false;
 }
 
 function archive_ticket($ticket_id, $user_id)
@@ -315,6 +342,19 @@ function get_assignable_users()
     return $users;
 }
 
+function get_staff_members()
+{
+    $db = db_connect();
+    $query = "SELECT * FROM staff_members";
+    $result = $db->query($query);
+
+    $staff_members = [];
+    while ($row = mysqli_fetch_assoc($result)) {
+        $staff_members[] = $row;
+    }
+
+    return $staff_members;
+}
 function get_all_tickets($filters = [])
 {
     $tickets = [];
@@ -333,13 +373,14 @@ function get_all_tickets($filters = [])
        p.name AS priority_name, 
        IFNULL(CONCAT(u_created.first_name, ' ', u_created.last_name), 'Guest') AS created_by_name, 
        IFNULL(CONCAT(u_assigned.first_name, ' ', u_assigned.last_name), 'Unassigned') AS assigned_to_name, 
-       IF(t.created_by = 'guest', t.guest_email, u_created.email) AS creator_email 
+       IF(t.created_by = 'guest', t.guest_email, u_created.email) AS creator_email,
+       u_assigned.user_id AS assigned_user_id
 FROM tickets t 
 LEFT JOIN categories c ON t.category_id = c.id 
 LEFT JOIN priorities p ON t.priority_id = p.id 
 LEFT JOIN users u_created ON t.created_by = 'user' AND t.user_id = u_created.user_id 
 LEFT JOIN users u_assigned ON t.assigned_to = u_assigned.user_id 
-WHERE t.is_archived = 0";  // Only return non-archived tickets by default
+WHERE t.is_archived = 0";
 
         // Validate and sanitize filters
         if (!empty($filters)) {
