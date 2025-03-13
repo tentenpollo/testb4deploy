@@ -30,7 +30,7 @@ if (isset($_GET['action']) && $_GET['action'] === 'delete' && isset($_GET['id'])
     $user_id = (int) $_GET['id'];
 
     // Prevent self-deletion
-    if ($user_id === $_SESSION['user_id']) {
+    if ($user_id === $_SESSION['staff_id']) {
         $error_message = "You cannot delete your own account";
     } else {
         $stmt = $mysqli->prepare("DELETE FROM staff_members WHERE id = ?");
@@ -78,7 +78,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['register_staff'])) {
             if ($stmt->execute()) {
                 $_SESSION['registration_success'] = true;
                 $_SESSION['registered_user'] = $name;
-                header("Location: staff_management.php?registration_success=1");
+                header("Location: dashboard.php?view=staff-management");
                 exit;
             } else {
                 $error_message = "Registration failed: " . $mysqli->error;

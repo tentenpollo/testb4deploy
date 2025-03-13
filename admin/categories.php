@@ -150,87 +150,90 @@ function getSubcategoriesByCategoryId($category_id)
 
 
 if ($_SERVER["REQUEST_METHOD"] == "POST") {
-
     if (isset($_POST['category_action'])) {
         if ($_POST['category_action'] == 'add') {
-
             $name = trim($_POST['name']);
             $description = trim($_POST['description']);
 
             if (!empty($name)) {
                 if (addCategory($name, $description)) {
-                    $success_msg = "Category added successfully!";
+                    $_SESSION['success_msg'] = "Category added successfully!";
+                    header("Location: dashboard.php?view=categories");
+                    exit();
                 } else {
-                    $error_msg = "Error adding category: " . mysqli_error($conn);
+                    $_SESSION['error_msg'] = "Error adding category: " . mysqli_error($conn);
                 }
             } else {
-                $error_msg = "Category name is required.";
+                $_SESSION['error_msg'] = "Category name is required.";
             }
         } elseif ($_POST['category_action'] == 'edit' && isset($_POST['category_id'])) {
-
             $category_id = (int) $_POST['category_id'];
             $name = trim($_POST['name']);
             $description = trim($_POST['description']);
 
             if (updateCategory($category_id, $name, $description)) {
-                $success_msg = "Category updated successfully!";
+                $_SESSION['success_msg'] = "Category updated successfully!";
+                header("Location: dashboard.php?view=categories");
+                exit();
             } else {
-                $error_msg = "Error updating category: " . mysqli_error($conn);
+                $_SESSION['error_msg'] = "Error updating category: " . mysqli_error($conn);
             }
         } elseif ($_POST['category_action'] == 'delete' && isset($_POST['category_id'])) {
-
             $category_id = (int) $_POST['category_id'];
 
             if (deleteCategory($category_id)) {
-                $success_msg = "Category deleted successfully!";
+                $_SESSION['success_msg'] = "Category deleted successfully!";
+                header("Location: dashboard.php?view=categories");
+                exit();
             } else {
-                $error_msg = "Error deleting category. Make sure there are no subcategories associated with this category.";
+                $_SESSION['error_msg'] = "Error deleting category. Make sure there are no subcategories associated with this category.";
             }
         }
     }
 
-
     if (isset($_POST['subcategory_action'])) {
         if ($_POST['subcategory_action'] == 'add') {
-
             $name = trim($_POST['name']);
             $description = trim($_POST['description']);
             $category_id = (int) $_POST['category_id'];
 
             if (!empty($name) && $category_id > 0) {
                 if (addSubcategory($name, $description, $category_id)) {
-                    $success_msg = "Subcategory added successfully!";
+                    $_SESSION['success_msg'] = "Subcategory added successfully!";
+                    header("Location: dashboard.php?view=categories");
+                    exit();
                 } else {
-                    $error_msg = "Error adding subcategory: " . mysqli_error($conn);
+                    $_SESSION['error_msg'] = "Error adding subcategory: " . mysqli_error($conn);
                 }
             } else {
-                $error_msg = "Subcategory name and category are required.";
+                $_SESSION['error_msg'] = "Subcategory name and category are required.";
             }
         } elseif ($_POST['subcategory_action'] == 'edit' && isset($_POST['subcategory_id'])) {
-
             $subcategory_id = (int) $_POST['subcategory_id'];
             $name = trim($_POST['name']);
             $description = trim($_POST['description']);
             $category_id = (int) $_POST['category_id'];
 
             if (updateSubcategory($subcategory_id, $name, $description, $category_id)) {
-                $success_msg = "Subcategory updated successfully!";
+                $_SESSION['success_msg'] = "Subcategory updated successfully!";
+                header("Location: dashboard.php?view=categories");
+                exit();
             } else {
-                $error_msg = "Error updating subcategory: " . mysqli_error($conn);
+                $_SESSION['error_msg'] = "Error updating subcategory: " . mysqli_error($conn);
             }
         } elseif ($_POST['subcategory_action'] == 'delete' && isset($_POST['subcategory_id'])) {
-
             $subcategory_id = (int) $_POST['subcategory_id'];
 
             if (deleteSubcategory($subcategory_id)) {
-                $success_msg = "Subcategory deleted successfully!";
+                $_SESSION['success_msg'] = "Subcategory deleted successfully!";
+                header("Location: dashboard.php?view=categories");
+                exit();
             } else {
-                $error_msg = "Error deleting subcategory: " . mysqli_error($conn);
+                $_SESSION['error_msg'] = "Error deleting subcategory: " . mysqli_error($conn);
             }
         }
     }
 }
-
 
 $categories = getAllCategories1();
 $subcategories = getAllSubcategories();
