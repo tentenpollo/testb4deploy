@@ -3,42 +3,58 @@ require_once '../includes/config.php';
 
 function addPriority($name, $level)
 {
-    global $conn;
+    $db = db_connect();
+    
+    if (!$db) {
+        error_log("Failed to connect to the database");
+        return false;
+    }
 
-    $name = mysqli_real_escape_string($conn, $name);
+    $name = $db->real_escape_string($name);
     $level = (int) $level;
 
     $sql = "INSERT INTO priorities (name, level, created_at, updated_at) 
             VALUES ('$name', $level, current_timestamp(), current_timestamp())";
 
-    return mysqli_query($conn, $sql);
+    return $db->query($sql);
 }
 
 function updatePriority($id, $name, $level)
 {
-    global $conn;
+    $db = db_connect();
+    
+    if (!$db) {
+        error_log("Failed to connect to the database");
+        return false;
+    }
 
     $id = (int) $id;
-    $name = mysqli_real_escape_string($conn, $name);
+    $name = $db->real_escape_string($name);
     $level = (int) $level;
 
     $sql = "UPDATE priorities 
             SET name = '$name', level = $level, updated_at = current_timestamp() 
             WHERE id = $id";
 
-    return mysqli_query($conn, $sql);
+    return $db->query($sql);
 }
 
 // Function to delete a priority
 function deletePriority($id)
 {
-    global $conn;
+    $db = db_connect();
+    
+    if (!$db) {
+        error_log("Failed to connect to the database");
+        return false;
+    }
 
     $id = (int) $id;
     $sql = "DELETE FROM priorities WHERE id = $id";
 
-    return mysqli_query($conn, $sql);
+    return $db->query($sql);
 }
+
 
 if ($_SERVER["REQUEST_METHOD"] == "POST" && isset($_POST['priority_action'])) {
     if ($_POST['priority_action'] == 'add') {
@@ -79,12 +95,37 @@ if ($_SERVER["REQUEST_METHOD"] == "POST" && isset($_POST['priority_action'])) {
     }
 }
 
-// Get all priorities from database
+// Use session for flash messages
+if (!isset($_SESSION)) {
+    session_start();
+}
+
+// Store messages in session
+if (isset($success_msg)) {
+    $_SESSION['success_msg'] = $success_msg;
+}
+
+if (isset($error_msg)) {
+    $_SESSION['error_msg'] = $error_msg;
+}
+
+// Get messages from session
+$success_msg = isset($_SESSION['success_msg']) ? $_SESSION['success_msg'] : null;
+$error_msg = isset($_SESSION['error_msg']) ? $_SESSION['error_msg'] : null;
+
+// Clear messages after displaying them
+if (isset($_SESSION['success_msg'])) {
+    unset($_SESSION['success_msg']);
+}
+
+if (isset($_SESSION['error_msg'])) {
+    unset($_SESSION['error_msg']);
+}
+
 $priorities = getAllPriorities();
 ?>
 
-<!-- Priorities Management Content -->
-<div x-data="priorityManager()" x-show="activeView === 'priorities'" class="p-6 space-y-6">
+<div x-data="priorityManager()" x-show="activeView === 'priorities'" class="p-6 space-y-6" x-init="clearMessagesOnNavigation()">
     <div class="flex justify-between items-center">
         <h1 class="text-2xl font-bold text-gray-800">Priority Management</h1>
         <button @click="showAddPriorityModal = true"
@@ -342,6 +383,23 @@ $priorities = getAllPriorities();
             deletePriority(id, name) {
                 this.priorityToDelete = { id, name };
                 this.showDeletePriorityModal = true;
+            },
+            
+            // Function to clear messages when navigating away
+            clearMessagesOnNavigation() {
+                // Watch for changes to activeView
+                this.$watch('activeView', (value) => {
+                    if (value !== 'priorities') {
+                        // Clear session messages via AJAX when navigating away
+                        fetch('clear_messages.php', {
+                            method: 'POST',
+                            headers: {
+                                'Content-Type': 'application/x-www-form-urlencoded',
+                            },
+                            body: 'type=priorities'
+                        });
+                    }
+                });
             }
         }));
     });

@@ -29,8 +29,7 @@ if (!isset($_SESSION['user_id']) || ($_SESSION['staff_role'] != 'admin' && $_SES
 if (isset($_GET['action']) && $_GET['action'] === 'delete' && isset($_GET['id'])) {
     $user_id = (int) $_GET['id'];
 
-    // Prevent self-deletion
-    if ($user_id === $_SESSION['staff_id']) {
+    if ($user_id === $_SESSION['user_id']) {
         $error_message = "You cannot delete your own account";
     } else {
         $stmt = $mysqli->prepare("DELETE FROM staff_members WHERE id = ?");
@@ -44,7 +43,6 @@ if (isset($_GET['action']) && $_GET['action'] === 'delete' && isset($_GET['id'])
     }
 }
 
-// Handle new staff registration
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['register_staff'])) {
     $name = filter_input(INPUT_POST, 'name', FILTER_SANITIZE_STRING);
     $email = filter_input(INPUT_POST, 'email', FILTER_SANITIZE_EMAIL);
@@ -86,7 +84,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['register_staff'])) {
         }
     }
 
-    // Handle errors
     if (isset($error_message)) {
         $_SESSION['registration_error'] = $error_message;
         $_SESSION['registration_input'] = [
@@ -94,7 +91,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['register_staff'])) {
             'email' => $email,
             'role' => $role
         ];
-        header('Location: ' . $_SERVER['PHP_SELF'] . '?edit_success=1&user=' . urlencode($name));
+        header('Location: dashboard.php?view=staff-management');
         exit;
     }
 }
@@ -144,7 +141,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
                 $_SESSION['edited_user'] = $name;
 
 
-                header('Location: ' . $_SERVER['PHP_SELF'] . '?edit_success=1&user=' . urlencode($name));
+                header('Location: dashboard.php?view=staff-management');
                 exit;
             } else if (!isset($error_message)) {
                 $error_message = "Update failed: " . $mysqli->error;
@@ -156,12 +153,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
     }
 }
 
-// Check for edit success message from redirect
 if (isset($_GET['edit_success']) && $_GET['edit_success'] == 1 && isset($_GET['user'])) {
     $success_message = "Staff member <strong>" . htmlspecialchars($_GET['user']) . "</strong> updated successfully!";
 }
 
-// Get all staff members (excluding current user)
 $sql = "SELECT id, name, email, role, created_at FROM staff_members WHERE id != ? ORDER BY created_at DESC";
 $stmt = $mysqli->prepare($sql);
 $stmt->bind_param("i", $_SESSION['user_id']);
@@ -533,7 +528,6 @@ $staff_members = $result->fetch_all(MYSQLI_ASSOC);
             console.log(`${key}: ${value}`);
         }
 
-        // Submit the form after logging the data
         form.submit();
     }
 </script>

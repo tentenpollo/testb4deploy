@@ -269,170 +269,155 @@ $subcategories = getAllSubcategories();
         </div>
     <?php endif; ?>
 
-    <!-- Tab Navigation -->
-    <div class="border-b border-gray-200">
-        <nav class="-mb-px flex space-x-8">
-            <a @click.prevent="activeTab = 'categories'"
-                :class="{'border-blue-500 text-blue-600': activeTab === 'categories', 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300': activeTab !== 'categories'}"
-                class="whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm cursor-pointer">
-                Categories
-            </a>
-            <a @click.prevent="activeTab = 'subcategories'"
-                :class="{'border-blue-500 text-blue-600': activeTab === 'subcategories', 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300': activeTab !== 'subcategories'}"
-                class="whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm cursor-pointer">
-                Subcategories
-            </a>
-        </nav>
-    </div>
-
-    <!-- Categories Table -->
+    <!-- Replace the Categories Table with this expanded/collapsible view -->
     <div x-show="activeTab === 'categories'" class="bg-white shadow-md rounded-lg overflow-hidden">
-        <div class="overflow-x-auto">
-            <table class="min-w-full divide-y divide-gray-200">
-                <thead class="bg-gray-50">
-                    <tr>
-                        <th scope="col"
-                            class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">ID
-                        </th>
-                        <th scope="col"
-                            class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Name
-                        </th>
-                        <th scope="col"
-                            class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                            Description</th>
-                        <th scope="col"
-                            class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                            Created</th>
-                        <th scope="col"
-                            class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                            Updated</th>
-                        <th scope="col"
-                            class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                            Actions</th>
-                    </tr>
-                </thead>
-                <tbody class="bg-white divide-y divide-gray-200">
-                    <?php if (empty($categories)): ?>
-                        <tr>
-                            <td colspan="6" class="px-6 py-4 text-center text-sm text-gray-500">No categories found</td>
-                        </tr>
-                    <?php else: ?>
-                        <?php foreach ($categories as $category): ?>
-                            <tr>
-                                <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500"><?php echo $category['id']; ?>
-                                </td>
-                                <td class="px-6 py-4 whitespace-nowrap">
-                                    <div class="text-sm font-medium text-gray-900">
-                                        <?php echo htmlspecialchars($category['name']); ?>
-                                    </div>
-                                </td>
-                                <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                                    <?php echo htmlspecialchars($category['description']); ?>
-                                </td>
-                                <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                                    <?php echo $category['created_at']; ?>
-                                </td>
-                                <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                                    <?php echo $category['updated_at']; ?>
-                                </td>
-                                <td class="px-6 py-4 whitespace-nowrap text-sm font-medium">
-                                    <div class="flex space-x-2">
-                                        <button @click="editCategory(<?php echo htmlspecialchars(json_encode($category)); ?>)"
-                                            class="text-blue-600 hover:text-blue-900">
-                                            <i class="fas fa-edit"></i>
-                                        </button>
-                                        <button
-                                            @click="deleteCategory(<?php echo $category['id']; ?>, '<?php echo htmlspecialchars($category['name']); ?>')"
-                                            class="text-red-600 hover:text-red-900">
-                                            <i class="fas fa-trash"></i>
-                                        </button>
-                                    </div>
-                                </td>
-                            </tr>
-                        <?php endforeach; ?>
-                    <?php endif; ?>
-                </tbody>
-            </table>
-        </div>
-    </div>
+        <?php if (empty($categories)): ?>
+            <div class="px-6 py-4 text-center text-sm text-gray-500">No categories found</div>
+        <?php else: ?>
+            <div class="space-y-4 p-4">
+                <?php foreach ($categories as $category): ?>
+                    <!-- Category Card with Expandable Subcategories -->
+                    <div class="border border-gray-200 rounded-lg overflow-hidden" x-data="{ expanded: false }">
+                        <!-- Category Header -->
+                        <div class="bg-gray-50 px-4 py-3 flex items-center justify-between cursor-pointer"
+                            @click="expanded = !expanded">
+                            <div class="flex items-center space-x-2">
+                                <button class="text-gray-500 focus:outline-none" aria-label="Toggle category">
+                                    <i class="fas" :class="expanded ? 'fa-chevron-down' : 'fa-chevron-right'"></i>
+                                </button>
+                                <h3 class="text-lg font-medium text-gray-900"><?php echo htmlspecialchars($category['name']); ?>
+                                </h3>
+                                <span class="text-sm text-gray-500">(ID: <?php echo $category['id']; ?>)</span>
+                            </div>
+                            <div class="flex items-center space-x-2">
+                                <span class="text-sm text-gray-500">
+                                    <?php
+                                    $subcategory_count = 0;
+                                    foreach ($subcategories as $subcategory) {
+                                        if ($subcategory['category_id'] == $category['id']) {
+                                            $subcategory_count++;
+                                        }
+                                    }
+                                    echo $subcategory_count . ' subcategories';
+                                    ?>
+                                </span>
+                                <div class="flex space-x-2 ml-4">
+                                    <button @click.stop="editCategory(<?php echo htmlspecialchars(json_encode($category)); ?>)"
+                                        class="text-blue-600 hover:text-blue-900">
+                                        <i class="fas fa-edit"></i>
+                                    </button>
+                                    <button
+                                        @click.stop="deleteCategory(<?php echo $category['id']; ?>, '<?php echo htmlspecialchars($category['name']); ?>')"
+                                        class="text-red-600 hover:text-red-900">
+                                        <i class="fas fa-trash"></i>
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
 
-    <!-- Subcategories Table -->
-    <div x-show="activeTab === 'subcategories'" class="bg-white shadow-md rounded-lg overflow-hidden">
-        <div class="overflow-x-auto">
-            <table class="min-w-full divide-y divide-gray-200">
-                <thead class="bg-gray-50">
-                    <tr>
-                        <th scope="col"
-                            class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">ID
-                        </th>
-                        <th scope="col"
-                            class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Name
-                        </th>
-                        <th scope="col"
-                            class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                            Description</th>
-                        <th scope="col"
-                            class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                            Category</th>
-                        <th scope="col"
-                            class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                            Created</th>
-                        <th scope="col"
-                            class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                            Updated</th>
-                        <th scope="col"
-                            class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                            Actions</th>
-                    </tr>
-                </thead>
-                <tbody class="bg-white divide-y divide-gray-200">
-                    <?php if (empty($subcategories)): ?>
-                        <tr>
-                            <td colspan="7" class="px-6 py-4 text-center text-sm text-gray-500">No subcategories found</td>
-                        </tr>
-                    <?php else: ?>
-                        <?php foreach ($subcategories as $subcategory): ?>
-                            <tr>
-                                <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500"><?php echo $subcategory['id']; ?>
-                                </td>
-                                <td class="px-6 py-4 whitespace-nowrap">
-                                    <div class="text-sm font-medium text-gray-900">
-                                        <?php echo htmlspecialchars($subcategory['name']); ?>
+                        <!-- Category Details and Subcategories -->
+                        <div x-show="expanded" x-transition class="border-t border-gray-200">
+                            <!-- Category Description -->
+                            <div class="px-4 py-3 bg-gray-50 border-b border-gray-200">
+                                <div class="flex justify-between">
+                                    <div>
+                                        <p class="text-sm text-gray-600">
+                                            <span class="font-medium">Description:</span>
+                                            <?php echo !empty($category['description']) ? htmlspecialchars($category['description']) : '<span class="italic text-gray-400">No description</span>'; ?>
+                                        </p>
                                     </div>
-                                </td>
-                                <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                                    <?php echo htmlspecialchars($subcategory['description']); ?>
-                                </td>
-                                <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                                    <?php echo htmlspecialchars($subcategory['category_name']); ?> (ID:
-                                    <?php echo $subcategory['category_id']; ?>)
-                                </td>
-                                <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                                    <?php echo $subcategory['created_at']; ?>
-                                </td>
-                                <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                                    <?php echo $subcategory['updated_at']; ?>
-                                </td>
-                                <td class="px-6 py-4 whitespace-nowrap text-sm font-medium">
-                                    <div class="flex space-x-2">
-                                        <button
-                                            @click="editSubcategory(<?php echo htmlspecialchars(json_encode($subcategory)); ?>)"
-                                            class="text-blue-600 hover:text-blue-900">
-                                            <i class="fas fa-edit"></i>
-                                        </button>
-                                        <button
-                                            @click="deleteSubcategory(<?php echo $subcategory['id']; ?>, '<?php echo htmlspecialchars($subcategory['name']); ?>')"
-                                            class="text-red-600 hover:text-red-900">
-                                            <i class="fas fa-trash"></i>
-                                        </button>
+                                    <div class="text-sm text-gray-500">
+                                        <span>Created: <?php echo $category['created_at']; ?></span>
+                                        <span class="ml-3">Updated: <?php echo $category['updated_at']; ?></span>
                                     </div>
-                                </td>
-                            </tr>
-                        <?php endforeach; ?>
-                    <?php endif; ?>
-                </tbody>
-            </table>
-        </div>
+                                </div>
+                            </div>
+
+                            <!-- Subcategories -->
+                            <div class="p-4">
+                                <div class="flex justify-between items-center mb-3">
+                                    <h4 class="font-medium text-gray-700">Subcategories</h4>
+                                    <button
+                                        @click.stop="showAddSubcategoryModal = true; document.getElementById('subcategory_category_id').value = '<?php echo $category['id']; ?>'"
+                                        class="bg-green-600 hover:bg-green-700 text-white px-3 py-1 rounded-md text-sm flex items-center">
+                                        <i class="fas fa-plus mr-1"></i> Add Subcategory
+                                    </button>
+                                </div>
+
+                                <!-- Subcategories List -->
+                                <div class="overflow-x-auto">
+                                    <?php
+                                    $hasSubcategories = false;
+                                    foreach ($subcategories as $subcategory) {
+                                        if ($subcategory['category_id'] == $category['id']) {
+                                            $hasSubcategories = true;
+                                            break;
+                                        }
+                                    }
+
+                                    if (!$hasSubcategories):
+                                        ?>
+                                        <p class="text-sm text-gray-500 italic py-2">No subcategories found for this category</p>
+                                    <?php else: ?>
+                                        <table class="min-w-full divide-y divide-gray-200">
+                                            <thead class="bg-gray-50">
+                                                <tr>
+                                                    <th scope="col"
+                                                        class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                                                        ID</th>
+                                                    <th scope="col"
+                                                        class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                                                        Name</th>
+                                                    <th scope="col"
+                                                        class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                                                        Description</th>
+                                                    <th scope="col"
+                                                        class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                                                        Created</th>
+                                                    <th scope="col"
+                                                        class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                                                        Actions</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody class="bg-white divide-y divide-gray-200">
+                                                <?php foreach ($subcategories as $subcategory): ?>
+                                                    <?php if ($subcategory['category_id'] == $category['id']): ?>
+                                                        <tr>
+                                                            <td class="px-4 py-2 whitespace-nowrap text-sm text-gray-500">
+                                                                <?php echo $subcategory['id']; ?></td>
+                                                            <td class="px-4 py-2 whitespace-nowrap text-sm font-medium text-gray-900">
+                                                                <?php echo htmlspecialchars($subcategory['name']); ?></td>
+                                                            <td class="px-4 py-2 text-sm text-gray-500">
+                                                                <?php echo htmlspecialchars($subcategory['description']); ?></td>
+                                                            <td class="px-4 py-2 whitespace-nowrap text-sm text-gray-500">
+                                                                <?php echo $subcategory['created_at']; ?></td>
+                                                            <td class="px-4 py-2 whitespace-nowrap text-sm font-medium">
+                                                                <div class="flex space-x-2">
+                                                                    <button
+                                                                        @click.stop="editSubcategory(<?php echo htmlspecialchars(json_encode($subcategory)); ?>)"
+                                                                        class="text-blue-600 hover:text-blue-900">
+                                                                        <i class="fas fa-edit"></i>
+                                                                    </button>
+                                                                    <button
+                                                                        @click.stop="deleteSubcategory(<?php echo $subcategory['id']; ?>, '<?php echo htmlspecialchars($subcategory['name']); ?>')"
+                                                                        class="text-red-600 hover:text-red-900">
+                                                                        <i class="fas fa-trash"></i>
+                                                                    </button>
+                                                                </div>
+                                                            </td>
+                                                        </tr>
+                                                    <?php endif; ?>
+                                                <?php endforeach; ?>
+                                            </tbody>
+                                        </table>
+                                    <?php endif; ?>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                <?php endforeach; ?>
+            </div>
+        <?php endif; ?>
     </div>
 
     <!-- Add Category Modal -->

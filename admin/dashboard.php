@@ -18,8 +18,8 @@ require_once '../includes/config.php';
 
 <body x-data="{ 
     sidebarOpen: true, 
-    activeView: 'tickets', 
-    openSubmenu: '', 
+    activeView: '<?php echo isset($_GET['view']) && in_array($_GET['view'], ['staff-management', 'tickets', 'priorities', 'categories', 'reports']) ? htmlspecialchars($_GET['view']) : 'tickets'; ?>', 
+    openSubmenu: '<?php echo isset($_GET['view']) && $_GET['view'] === 'staff-management' ? 'users' : ''; ?>',
     searchExpanded: false,
     isViewsListOpen: true,
     profileMenuOpen: false
@@ -224,5 +224,18 @@ require_once '../includes/config.php';
         </main>
     </div>
 </body>
+
+<script>
+// Clear the URL parameter after the page has loaded and Alpine.js has initialized
+window.addEventListener('DOMContentLoaded', () => {
+    // Use setTimeout to ensure Alpine.js has had time to initialize
+    setTimeout(() => {
+        if (window.location.search) {
+            const currentPath = window.location.pathname;
+            window.history.replaceState({}, document.title, currentPath);
+        }
+    }, 100);
+});
+</script>
 
 </html>
