@@ -484,6 +484,7 @@ $pastDueCount = count(array_filter($tickets, function ($ticket) {
             assignableUsers: window.assignableUsersData || [],
             expandedTicketId: null,
             isViewsListOpen: true,
+            tempAssignments: {},
             currentPages: {
                 'unseen': 1,
                 'seen': 1,
@@ -502,6 +503,11 @@ $pastDueCount = count(array_filter($tickets, function ($ticket) {
             },
 
             init() {
+                if (this.tickets && this.tickets.length) {
+                    this.tickets.forEach(ticket => {
+                        this.initTempAssignment(ticket.id);
+                    });
+                }
                 this.updateTicketCounts();
                 console.log('Is Admin:', this.isAdmin);
                 console.log('Tickets:', this.tickets);
@@ -540,11 +546,29 @@ $pastDueCount = count(array_filter($tickets, function ($ticket) {
                 console.log('Active Status:', this.activeStatus);
             },
 
-            toggleTicketExpand(ticketId) {
-                this.expandedTicketId = this.expandedTicketId === ticketId ? null : ticketId;
+            initTempAssignment(ticketId) {
+                const ticket = this.tickets.find(t => t.id === ticketId);
+                if (ticket) {
+                    this.tempAssignments[ticketId] = {
+                        assigned_to: ticket.assigned_to || '',
+                        category_id: ticket.category_id || '',
+                        priority_id: ticket.priority_id || ''
+                    };
+                }
             },
 
-            // Add this to your ticketTable() function
+            toggleTicketExpand(ticketId) {
+                this.expandedTicketId = this.expandedTicketId === ticketId ? null : ticketId;
+                if (this.expandedTicketId === ticketId) {
+                    // Initialize temp values when expanding
+                    this.tempAssignments[ticketId] = {
+                        assigned_to: this.tickets.find(t => t.id === ticketId)?.assigned_to || '',
+                        category_id: this.tickets.find(t => t.id === ticketId)?.category_id || '',
+                        priority_id: this.tickets.find(t => t.id === ticketId)?.priority_id || ''
+                    };
+                }
+            },
+
             updateTicketCounts() {
                 const userId = window.currentUserId || 0;
 
@@ -591,7 +615,6 @@ $pastDueCount = count(array_filter($tickets, function ($ticket) {
             },
 
             getFilteredTickets() {
-                // First, filter by active view section
                 let filteredTickets = this.tickets;
 
                 if (this.activeViewSection === 'my-tickets') {
@@ -607,14 +630,12 @@ $pastDueCount = count(array_filter($tickets, function ($ticket) {
                 } else if (this.activeViewSection === 'high-priority') {
                     filteredTickets = filteredTickets.filter(ticket => ticket.priority_name === 'High');
                 } else if (this.activeViewSection === 'all-tickets') {
-                    // No additional filtering for all tickets
+                    // No additional filtering needed
                 }
 
-                // Modified status filtering to group "pending" and "seen"
                 if (this.activeStatus === 'unseen') {
                     filteredTickets = filteredTickets.filter(ticket => ticket.status === 'unseen');
                 } else if (this.activeStatus === 'seen') {
-                    // Group "pending" and "seen" tickets together
                     filteredTickets = filteredTickets.filter(ticket =>
                         ticket.status === 'seen' || ticket.status === 'pending');
                 } else if (this.activeStatus === 'resolved') {
@@ -634,7 +655,9 @@ $pastDueCount = count(array_filter($tickets, function ($ticket) {
                 return filteredTickets.slice(start, end);
             },
 
-            updateTicket(ticketId, ticketData) {
+            updateTicket(ticketId) {
+                const ticketData = this.tempAssignments[ticketId];
+
                 fetch(`update_ticket.php?id=${ticketId}`, {
                     method: 'POST',
                     body: JSON.stringify(ticketData),
@@ -647,7 +670,41 @@ $pastDueCount = count(array_filter($tickets, function ($ticket) {
                         if (data.success && data.ticket) {
                             const index = this.tickets.findIndex(ticket => ticket.id === ticketId);
                             if (index !== -1) {
-                                this.tickets[index] = { ...this.tickets[index], ...data.ticket };
+                                // Get the name of the assigned user if needed
+                                let assignedToName = 'Unassigned';
+                                if (data.ticket.assigned_to) {
+                                    const assignedUser = this.assignableUsers.find(user => user.id == data.ticket.assigned_to);
+                                    assignedToName = assignedUser ? assignedUser.name : 'Unassigned';
+                                }
+
+                                // Get the priority name if needed
+                                let priorityName = '';
+                                if (data.ticket.priority_id) {
+                                    const priority = this.priorities.find(p => p.id == data.ticket.priority_id);
+                                    priorityName = priority ? priority.name : '';
+                                }
+
+                                // Get the category name if needed
+                                let categoryName = '';
+                                if (data.ticket.category_id) {
+                                    const category = this.categories.find(c => c.id == data.ticket.category_id);
+                                    categoryName = category ? category.name : '';
+                                }
+
+                                // Update the ticket with all necessary display data
+                                this.tickets[index] = {
+                                    ...this.tickets[index],
+                                    ...data.ticket,
+                                    assigned_to_name: assignedToName,
+                                    priority_name: priorityName,
+                                    category_name: categoryName
+                                };
+
+                                // Reset expanded state to collapse the ticket
+                                this.expandedTicketId = null;
+
+                                // Update ticket counts
+                                this.updateTicketCounts();
                             }
                             this.showNotification('Ticket updated successfully', 'success');
                         }
@@ -1211,7 +1268,9 @@ $pastDueCount = count(array_filter($tickets, function ($ticket) {
                                             <div>
                                                 <label class="block text-sm font-medium text-gray-700 mb-1">Set
                                                     Category</label>
-                                                <select x-model="ticket.category_id"
+                                                <select
+                                                    x-init="if(!tempAssignments[ticket.id]) initTempAssignment(ticket.id)"
+                                                    x-model="tempAssignments[ticket.id] ? tempAssignments[ticket.id].category_id : ''"
                                                     class="w-full border rounded px-3 py-2 text-sm">
                                                     <option value="">Select Category</option>
                                                     <template x-for="category in categories" :key="category.id">
@@ -1224,9 +1283,9 @@ $pastDueCount = count(array_filter($tickets, function ($ticket) {
                                             <div>
                                                 <label class="block text-sm font-medium text-gray-700 mb-1">Assigned
                                                     To</label>
-                                                <select x-model="ticket.assigned_to"
+                                                <select x-model="tempAssignments[ticket.id].assigned_to"
                                                     class="w-full border rounded px-3 py-2 text-sm">
-                                                    <option value="">Unassigned</option>
+                                                    <option value="">unassigned</option>
                                                     <template x-for="user in assignableUsers" :key="user.id">
                                                         <option :value="user.id" x-text="user.name"></option>
                                                     </template>
@@ -1236,7 +1295,7 @@ $pastDueCount = count(array_filter($tickets, function ($ticket) {
                                             <div>
                                                 <label
                                                     class="block text-sm font-medium text-gray-700 mb-1">Priority</label>
-                                                <select x-model="ticket.priority_id"
+                                                <select x-model="tempAssignments[ticket.id].priority_id"
                                                     class="w-full border rounded px-3 py-2 text-sm">
                                                     <option value="">Select Priority</option>
                                                     <template x-for="priority in priorities" :key="priority.id">
@@ -1328,7 +1387,9 @@ $pastDueCount = count(array_filter($tickets, function ($ticket) {
                                             <div>
                                                 <label class="block text-sm font-medium text-gray-700 mb-1">Set
                                                     Category</label>
-                                                <select x-model="ticket.category_id"
+                                                <select
+                                                    x-init="if(!tempAssignments[ticket.id]) initTempAssignment(ticket.id)"
+                                                    x-model="tempAssignments[ticket.id] ? tempAssignments[ticket.id].category_id : ''"
                                                     class="w-full border rounded px-3 py-2 text-sm">
                                                     <option value="">Select Category</option>
                                                     <template x-for="category in categories" :key="category.id">
@@ -1337,13 +1398,12 @@ $pastDueCount = count(array_filter($tickets, function ($ticket) {
                                                 </select>
                                             </div>
 
-                                            <!-- Assigned To Dropdown FIX THISSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSS-->
                                             <div>
                                                 <label class="block text-sm font-medium text-gray-700 mb-1">Assigned
                                                     To</label>
-                                                <select x-model="ticket.assigned_to"
+                                                <select x-model="tempAssignments[ticket.id].assigned_to"
                                                     class="w-full border rounded px-3 py-2 text-sm">
-                                                    <option value="">Unassigned</option>
+                                                    <option value="">unassigned</option>
                                                     <template x-for="user in assignableUsers" :key="user.id">
                                                         <option :value="user.id" x-text="user.name"></option>
                                                     </template>
@@ -1353,7 +1413,7 @@ $pastDueCount = count(array_filter($tickets, function ($ticket) {
                                             <div>
                                                 <label
                                                     class="block text-sm font-medium text-gray-700 mb-1">Priority</label>
-                                                <select x-model="ticket.priority_id"
+                                                <select x-model="tempAssignments[ticket.id].priority_id"
                                                     class="w-full border rounded px-3 py-2 text-sm">
                                                     <option value="">Select Priority</option>
                                                     <template x-for="priority in priorities" :key="priority.id">
@@ -1446,7 +1506,9 @@ $pastDueCount = count(array_filter($tickets, function ($ticket) {
                                             <div>
                                                 <label class="block text-sm font-medium text-gray-700 mb-1">Set
                                                     Category</label>
-                                                <select x-model="ticket.category_id"
+                                                <select
+                                                    x-init="if(!tempAssignments[ticket.id]) initTempAssignment(ticket.id)"
+                                                    x-model="tempAssignments[ticket.id] ? tempAssignments[ticket.id].category_id : ''"
                                                     class="w-full border rounded px-3 py-2 text-sm">
                                                     <option value="">Select Category</option>
                                                     <template x-for="category in categories" :key="category.id">
@@ -1459,9 +1521,9 @@ $pastDueCount = count(array_filter($tickets, function ($ticket) {
                                             <div>
                                                 <label class="block text-sm font-medium text-gray-700 mb-1">Assigned
                                                     To</label>
-                                                <select x-model="ticket.assigned_to"
+                                                <select x-model="tempAssignments[ticket.id].assigned_to"
                                                     class="w-full border rounded px-3 py-2 text-sm">
-                                                    <option value="">Unassigned</option>
+                                                    <option value="">unassigned</option>
                                                     <template x-for="user in assignableUsers" :key="user.id">
                                                         <option :value="user.id" x-text="user.name"></option>
                                                     </template>
@@ -1471,7 +1533,7 @@ $pastDueCount = count(array_filter($tickets, function ($ticket) {
                                             <div>
                                                 <label
                                                     class="block text-sm font-medium text-gray-700 mb-1">Priority</label>
-                                                <select x-model="ticket.priority_id"
+                                                <select x-model="tempAssignments[ticket.id].priority_id"
                                                     class="w-full border rounded px-3 py-2 text-sm">
                                                     <option value="">Select Priority</option>
                                                     <template x-for="priority in priorities" :key="priority.id">
