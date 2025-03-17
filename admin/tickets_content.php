@@ -105,8 +105,7 @@ $pastDueCount = count(array_filter($tickets, function ($ticket) {
             downloadAttachment(attachment) {
                 const fullPath = attachment.file_path;
                 const filename = fullPath.split(/[\/\\]/).pop();
-
-                // Use a dedicated endpoint for downloads
+                
                 const downloadUrl = `ajax/ajax_handlers.php?action=download_attachment&ticket_id=${this.currentTicket.id}&filename=${encodeURIComponent(filename)}`;
 
                 const iframe = document.createElement('iframe');
