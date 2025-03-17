@@ -41,6 +41,23 @@ if (isset($_GET['action'])) {
             }
             break;
 
+        case 'delete_attachment':
+            if (isset($_POST['attachment_id']) && isset($_POST['ticket_id'])) {
+                $attachment_id = $_POST['attachment_id'];
+                $ticket_id = $_POST['ticket_id'];
+
+                $result = delete_ticket_attachment($attachment_id, $ticket_id);
+
+                if ($result) {
+                    echo json_encode(['success' => true]);
+                } else {
+                    echo json_encode(['success' => false, 'error' => 'Failed to delete attachment']);
+                }
+            } else {
+                echo json_encode(['success' => false, 'error' => 'Missing required parameters']);
+            }
+            break;
+
         case 'get_ticket_history':
             if (isset($_GET['ticket_id'])) {
                 $ticket_id = $_GET['ticket_id'];
@@ -184,6 +201,7 @@ if (isset($_GET['action'])) {
                 $ticket_id = $_POST['ticket_id'];
                 $content = $_POST['content'];
                 $is_private = isset($_POST['is_private']) ? (bool) $_POST['is_private'] : false;
+                $user_id = $_SESSION['user_id'];
 
                 $result = add_ticket_comment($ticket_id, $user_id, $content, $is_private);
 

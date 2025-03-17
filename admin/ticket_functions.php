@@ -184,6 +184,58 @@ function update_ticket_priority($ticket_id, $user_id, $new_priority_id)
     return false;
 }
 
+function delete_ticket_attachment($attachment_id, $ticket_id) {
+    $db = db_connect();
+    
+    $attachment_id = $db->real_escape_string($attachment_id);
+    $ticket_id = $db->real_escape_string($ticket_id);
+    
+    // First, get the file path to delete the actual file
+    $query = "SELECT file_path FROM attachments WHERE id = '$attachment_id' AND ticket_id = '$ticket_id'";
+    $result = $db->query($query);
+    
+    if ($result && $result->num_rows > 0) {
+        $row = $result->fetch_assoc();
+        $file_path = $row['file_path'];
+        
+        // Delete the file from filesystem
+        if (file_exists($file_path) && unlink($file_path)) {
+            // If file deleted successfully, remove from database
+            $delete_query = "DELETE FROM attachments WHERE id = '$attachment_id' AND ticket_id = '$ticket_id'";
+            $delete_result = $db->query($delete_query);
+            
+            if ($delete_result) {
+                // Add to ticket history
+                $user_id = isset($_SESSION['user_id']) ? $_SESSION['user_id'] : 0;
+                $history_query = "INSERT INTO ticket_history 
+                                (ticket_id, user_id, type, new_value, created_at)
+                                VALUES 
+                                ('$ticket_id', '$user_id', 'attachment_delete', 'Attachment deleted', NOW())";
+                $db->query($history_query);
+                
+                return true;
+            }
+        } else {
+            $delete_query = "DELETE FROM attachments WHERE id = '$attachment_id' AND ticket_id = '$ticket_id'";
+            $delete_result = $db->query($delete_query);
+            
+            if ($delete_result) {
+                // Add to ticket history
+                $user_id = isset($_SESSION['user_id']) ? $_SESSION['user_id'] : 0;
+                $history_query = "INSERT INTO ticket_history 
+                                (ticket_id, user_id, type, new_value, created_at)
+                                VALUES 
+                                ('$ticket_id', '$user_id', 'attachment_delete', 'Attachment record deleted (file not found)', NOW())";
+                $db->query($history_query);
+                
+                return true;
+            }
+        }
+    }
+    
+    return false;
+}
+
 function assign_ticket($ticket_id, $admin_user_id, $assignee_id)
 {
     $db = db_connect();

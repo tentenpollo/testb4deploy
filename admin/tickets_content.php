@@ -62,7 +62,6 @@ $pastDueCount = count(array_filter($tickets, function ($ticket) {
     window.sharedViewCounts = window.ticketCounts;
 
     function ticketDetailsModal() {
-        console.log("INITIALIZING TICKET DETAILS MODAL");
         return {
             isOpen: false,
             currentTicket: null,
@@ -70,11 +69,11 @@ $pastDueCount = count(array_filter($tickets, function ($ticket) {
             attachments: [],
             priorities: [],
             assignableUsers: [],
-
-            attachments: [],
+            commentAttachments: [],
+            editorInitialized: false,
+            editor: null,
 
             openTicketDetailsModal(ticketId) {
-                // Dispatch an event that the modal component is listening for
                 window.dispatchEvent(new CustomEvent('open-ticket-modal', {
                     detail: { ticketId: ticketId }
                 }));
@@ -89,7 +88,6 @@ $pastDueCount = count(array_filter($tickets, function ($ticket) {
             },
 
             downloadAttachment(attachment) {
-                // Extract filename from path (works with both Windows and Unix paths)
                 const fullPath = attachment.file_path;
                 const filename = fullPath.split(/[\/\\]/).pop();
 
@@ -109,8 +107,40 @@ $pastDueCount = count(array_filter($tickets, function ($ticket) {
                 console.log(`Attempting to download: ${filename} via ${downloadUrl}`);
             },
 
+            async deleteAttachment(attachmentId, index) {
+                if (!confirm('Are you sure you want to delete this attachment?')) {
+                    return;
+                }
+
+                try {
+                    const formData = new FormData();
+                    formData.append('attachment_id', attachmentId);
+                    formData.append('ticket_id', this.currentTicket.id);
+
+                    const response = await fetch('ajax/ajax_handlers.php?action=delete_attachment', {
+                        method: 'POST',
+                        body: formData
+                    });
+
+                    const data = await response.json();
+
+                    if (data.success) {
+                        // Remove from local array
+                        this.attachments.splice(index, 1);
+                        // Reload ticket history to show the deletion in the history
+                        await this.loadTicketHistory(this.currentTicket.id);
+                        alert('Attachment deleted successfully');
+                    } else {
+                        alert('Error deleting attachment: ' + data.error);
+                    }
+                } catch (error) {
+                    console.error('Failed to delete attachment:', error);
+                    alert('Failed to delete attachment. Please try again.');
+                }
+            },
+
             async openModal(ticketId) {
-                console.log("Opening modal for ticket ID:", ticketId)
+                console.log("Opening modal for ticket ID:", ticketId);
                 this.isOpen = true;
                 await this.loadTicketDetails(ticketId);
                 await this.loadTicketHistory(ticketId);
@@ -118,9 +148,196 @@ $pastDueCount = count(array_filter($tickets, function ($ticket) {
                 await this.loadPriorities();
                 await this.loadAssignableUsers();
                 document.body.classList.add('overflow-hidden');
+
+                // Initialize editor after DOM has updated, with proper cleanup first
+                this.$nextTick(() => {
+                    // Complete editor teardown before creating a new one
+                    this.destroyEditor();
+                    // Create a fresh editor container
+                    this.createFreshEditorContainer();
+                    // Initialize new editor
+                    this.initializeEditor();
+                });
+            },
+
+            destroyEditor() {
+                // Remove any existing editor completely
+                if (this.editor) {
+                    try {
+                        // Quill specific cleanup
+                        this.editor.removeAllListeners();
+                        // Delete the editor instance
+                        this.editor = null;
+                    } catch (error) {
+                        console.error("Error destroying editor:", error);
+                    }
+                }
+
+                // Remove ALL Quill-related elements in our container
+                try {
+                    const container = document.querySelector('#editor-container-wrapper');
+                    if (container) {
+                        container.innerHTML = '';
+                    }
+                } catch (err) {
+                    console.error("Error clearing editor container:", err);
+                }
+            },
+
+            createFreshEditorContainer() {
+                // Find the wrapper
+                const wrapper = document.querySelector('#editor-container-wrapper');
+                if (!wrapper) return;
+
+                // Create a brand new container with a unique ID
+                const newContainerId = 'editor-container-' + Date.now();
+                wrapper.innerHTML = `<div id="${newContainerId}" class="min-h-[200px]"></div>`;
+
+                // Store the ID for later use
+                this.editorContainerId = newContainerId;
+            },
+
+            cleanupEditor() {
+                // Remove any existing editor instance
+                if (this.editor) {
+                    try {
+                        // Remove the editor completely
+                        this.editor = null;
+
+                        // Reset the initialized flag
+                        this.editorInitialized = false;
+
+                        // Clear the editor container if it exists
+                        if (this.$refs.editorContainer) {
+                            this.$refs.editorContainer.innerHTML = '';
+                        }
+
+                        // Remove any Quill toolbars that might be left in the DOM
+                        const oldToolbars = document.querySelectorAll('.ql-toolbar');
+                        oldToolbars.forEach(toolbar => {
+                            if (toolbar.parentNode && toolbar.closest('.ticket-editor-container') !== null) {
+                                toolbar.parentNode.removeChild(toolbar);
+                            }
+                        });
+                    } catch (error) {
+                        console.error("Error cleaning up editor:", error);
+                    }
+                }
+            },
+
+            initializeEditor() {
+                // Make sure we have a container ID
+                if (!this.editorContainerId) return;
+
+                // Load Quill if needed
+                if (!window.Quill) {
+                    // Check if we're already loading Quill
+                    if (document.querySelector('script[src*="quill.min.js"]')) {
+                        // Wait a bit and try again
+                        setTimeout(() => this.initializeEditor(), 200);
+                        return;
+                    }
+
+                    // Load Quill CSS if not present
+                    if (!document.querySelector('link[href*="quill.snow.min.css"]')) {
+                        const quillCSS = document.createElement('link');
+                        quillCSS.rel = 'stylesheet';
+                        quillCSS.href = 'https://cdnjs.cloudflare.com/ajax/libs/quill/1.3.7/quill.snow.min.css';
+                        document.head.appendChild(quillCSS);
+                    }
+
+                    // Load Quill JS
+                    const quillScript = document.createElement('script');
+                    quillScript.src = 'https://cdnjs.cloudflare.com/ajax/libs/quill/1.3.7/quill.min.js';
+                    quillScript.onload = () => this.setupQuillEditor();
+                    document.head.appendChild(quillScript);
+                } else {
+                    this.setupQuillEditor();
+                }
+            },
+
+            setupQuillEditor() {
+                try {
+                    // Make sure the container still exists
+                    const container = document.getElementById(this.editorContainerId);
+                    if (!container) {
+                        console.error("Editor container not found");
+                        return;
+                    }
+
+                    // Configure Quill toolbar options - simpler to match your screenshot
+                    const toolbarOptions = [
+                        ['bold', 'italic', 'underline', 'strike'],
+                        ['blockquote', 'code-block'],
+                        [{ 'header': [1, 2, false] }],
+                        [{ 'list': 'ordered' }, { 'list': 'bullet' }],
+                        [{ 'script': 'sub' }, { 'script': 'super' }],
+                        [{ 'indent': '-1' }, { 'indent': '+1' }],
+                        [{ 'size': ['small', false, 'large', 'huge'] }],
+                        [{ 'color': [] }, { 'background': [] }],
+                        [{ 'font': [] }],
+                        [{ 'align': [] }],
+                        ['link', 'image']
+                    ];
+
+                    // Initialize Quill with direct selector to avoid multiple toolbar issue
+                    this.editor = new Quill(`#${this.editorContainerId}`, {
+                        modules: {
+                            toolbar: toolbarOptions
+                        },
+                        placeholder: 'Type your response here...',
+                        theme: 'snow'
+                    });
+
+                    // Add image handler
+                    const toolbar = this.editor.getModule('toolbar');
+                    toolbar.addHandler('image', () => {
+                        this.handleImageInsertion();
+                    });
+
+                    console.log("Quill editor initialized successfully");
+                } catch (error) {
+                    console.error("Error initializing Quill:", error);
+                }
+            },
+
+            handleImageInsertion() {
+                const fileInput = document.createElement('input');
+                fileInput.setAttribute('type', 'file');
+                fileInput.setAttribute('accept', 'image/*');
+                fileInput.click();
+
+                fileInput.onchange = async () => {
+                    const file = fileInput.files[0];
+                    if (file) {
+                        // Show loading indicator in editor
+                        const range = this.editor.getSelection(true);
+                        this.editor.insertText(range.index, 'Uploading image...', { 'italic': true, 'color': '#999' });
+
+                        try {
+                            // Upload the image
+                            await this.uploadAttachment(file);
+
+                            // Get the URL (assuming your upload function returns the URL)
+                            // For now we'll use a placeholder
+                            const imageUrl = URL.createObjectURL(file);
+
+                            // Remove loading text and insert image
+                            this.editor.deleteText(range.index, 'Uploading image...'.length);
+                            this.editor.insertEmbed(range.index, 'image', imageUrl);
+                        } catch (error) {
+                            console.error('Failed to upload image:', error);
+                            // Remove loading text and show error
+                            this.editor.deleteText(range.index, 'Uploading image...'.length);
+                            this.editor.insertText(range.index, 'Error uploading image', { 'italic': true, 'color': '#ff0000' });
+                        }
+                    }
+                };
             },
 
             closeModal() {
+                this.cleanupEditor();
+
                 this.isOpen = false;
                 this.currentTicket = null;
                 this.ticketHistory = [];
@@ -302,11 +519,11 @@ $pastDueCount = count(array_filter($tickets, function ($ticket) {
             },
 
             async addComment(isPrivate = false) {
-                if (!this.currentTicket) return;
+                if (!this.currentTicket || !this.editor) return;
 
-                const commentContent = this.$refs.commentEditor.innerHTML;
+                const commentContent = this.editor.root.innerHTML;
 
-                if (!commentContent.trim()) {
+                if (!this.editor.getText().trim()) {
                     alert('Please enter a comment');
                     return;
                 }
@@ -317,6 +534,10 @@ $pastDueCount = count(array_filter($tickets, function ($ticket) {
                     formData.append('content', commentContent);
                     formData.append('is_private', isPrivate ? 1 : 0);
 
+                    this.commentAttachments.forEach((attachment, index) => {
+                        formData.append(`attachment_${index}`, attachment.file);
+                    });
+
                     const response = await fetch('ajax/ajax_handlers.php?action=add_comment', {
                         method: 'POST',
                         body: formData
@@ -326,10 +547,9 @@ $pastDueCount = count(array_filter($tickets, function ($ticket) {
 
                     if (data.success) {
                         // Clear the editor
-                        this.$refs.commentEditor.innerHTML = '';
-                        // Clear any attachments
-                        this.attachments = [];
-                        // Reload ticket history
+                        this.editor.setText('');
+                        // Clear comment attachments
+                        this.commentAttachments = [];
                         await this.loadTicketHistory(this.currentTicket.id);
                         alert('Comment added successfully');
                     } else {
@@ -381,8 +601,10 @@ $pastDueCount = count(array_filter($tickets, function ($ticket) {
                 return date.toLocaleString();
             },
 
-            // Rich text editor functions
             formatText(command) {
+                // First, ensure the editor has focus
+                this.$refs.commentEditor.focus();
+
                 switch (command) {
                     case 'bold':
                         document.execCommand('bold', false, null);
@@ -400,17 +622,18 @@ $pastDueCount = count(array_filter($tickets, function ($ticket) {
                         }
                         break;
                     case 'heading':
+                        // For headings, we'll use formatBlock which is more reliable
                         document.execCommand('formatBlock', false, '<h3>');
                         break;
                     case 'list-ul':
+                        // Use the built-in command for unordered lists
                         document.execCommand('insertUnorderedList', false, null);
                         break;
                     case 'list-ol':
+                        // Use the built-in command for ordered lists
                         document.execCommand('insertOrderedList', false, null);
                         break;
                 }
-                // Focus back on the editor
-                this.$refs.commentEditor.focus();
             },
 
             async addAttachment() {
@@ -424,14 +647,12 @@ $pastDueCount = count(array_filter($tickets, function ($ticket) {
 
                     const file = e.target.files[0];
 
-                    // Add to local attachments array for preview
-                    this.attachments.push({
+                    this.commentAttachments.push({
                         name: file.name,
                         size: file.size,
-                        file: file // Keep the file object for upload
+                        file: file
                     });
 
-                    // If we want to upload immediately:
                     if (this.currentTicket) {
                         await this.uploadAttachment(file);
                     }
@@ -470,6 +691,10 @@ $pastDueCount = count(array_filter($tickets, function ($ticket) {
 
             removeAttachment(index) {
                 this.attachments.splice(index, 1);
+            },
+
+            removeCommentAttachment(index) {
+                this.commentAttachments.splice(index, 1);
             }
         };
     }
@@ -670,7 +895,6 @@ $pastDueCount = count(array_filter($tickets, function ($ticket) {
                         if (data.success && data.ticket) {
                             const index = this.tickets.findIndex(ticket => ticket.id === ticketId);
                             if (index !== -1) {
-                                // Get the name of the assigned user if needed
                                 let assignedToName = 'Unassigned';
                                 if (data.ticket.assigned_to) {
                                     const assignedUser = this.assignableUsers.find(user => user.id == data.ticket.assigned_to);
@@ -1085,7 +1309,7 @@ $pastDueCount = count(array_filter($tickets, function ($ticket) {
 
 </script>
 
-<div x-show="activeView === 'tickets'" class="flex gap-6" x-data="{ 
+<div x-show="activeView === 'tickets'" class="flex gap-8" x-data="{ 
     isViewsSidebarOpen: true, 
     activeViewSection: 'my-tickets',
     isAdmin: window.isAdmin || false,
@@ -1124,7 +1348,7 @@ $pastDueCount = count(array_filter($tickets, function ($ticket) {
                 }" x-show="isViewsSidebarOpen" x-transition>
         <div class="tickets-header flex justify-center py-4">
             <div class="flex items-center">
-                <h1 class="text-xl font-bold text-gray-800">Tickets</h1>
+                <h1 class="text-lg font-bold text-gray-800">Tickets</h1>
             </div>
         </div>
         <div class="views-section h-full">
@@ -1140,7 +1364,7 @@ $pastDueCount = count(array_filter($tickets, function ($ticket) {
                 <i class="fas fa-shield-alt mr-1"></i> Admin View
             </div>
 
-            <div class="space-y-1 mt-4" x-show="isViewsListOpen" x-transition>
+            <div class="space-y-2 mt-4" x-show="isViewsListOpen" x-transition>
                 <!-- My Tickets -->
                 <div class="ticket-sidebar-item border-b border-gray-200"
                     :class="{ 'active': activeViewSection === 'my-tickets' }"
@@ -1183,12 +1407,12 @@ $pastDueCount = count(array_filter($tickets, function ($ticket) {
     </div>
 
     <!-- Right Content - Kanban Columns -->
-    <div x-show="activeViewSection !== 'all-tickets'" class="flex-1 py-4 px-6">
+    <div x-show="activeViewSection !== 'all-tickets'" class="flex-1 py-4 px-8">
         <!-- Aligned Tickets Nav -->
-        <div class="flex items-center justify-between mb-4 border-b border-gray-200 pb-2">
+        <div class="flex items-center justify-between mb-6 border-b border-gray-200 pb-3">
             <div class="flex items-center">
                 <i class="fas fa-bars mr-2 cursor-pointer" @click="isViewsSidebarOpen = !isViewsSidebarOpen"></i>
-                <h1 class="text-xl font-bold text-gray-800" x-text="
+                <h1 class="text-lg font-bold text-gray-800" x-text="
                             activeViewSection === 'my-tickets' ? 'My Tickets' : 
                             activeViewSection === 'past-due' ? 'Past Due Tickets' : 
                             activeViewSection === 'unassigned' ? 'Unassigned Tickets' : 
@@ -1197,7 +1421,7 @@ $pastDueCount = count(array_filter($tickets, function ($ticket) {
                         ">My Tickets</h1>
                 <i class="fas fa-chevron-down ml-2 text-xs"></i>
             </div>
-            <div class="flex items-center space-x-4" style="margin-top: -2px">
+            <div class="flex items-center space-x-6" style="margin-top: -2px">
                 <button class="flex items-center text-gray-600">
                     <i class="fas fa-ticket-alt mr-1"></i>
                     <span>My Tickets</span>
@@ -1221,14 +1445,14 @@ $pastDueCount = count(array_filter($tickets, function ($ticket) {
             <div class="kanban-columns" x-data="ticketTable()">
                 <!-- Unseen Column -->
                 <div class="kanban-column">
-                    <h2 class="text-lg font-semibold text-gray-800 mb-4">Open</h2>
+                    <h2 class="text-md font-semibold text-gray-800 mb-4">Open</h2>
                     <div class="ticket-list">
                         <template x-for="ticket in paginatedTickets('unseen')" :key="ticket.id">
                             <!-- Ticket Card -->
-                            <div class="bg-white rounded-lg shadow-md p-4 mb-4 hover:shadow-lg transition-shadow">
+                            <div class="bg-white rounded-lg shadow-md p-3 mb-4 hover:shadow-lg transition-shadow">
                                 <!-- Ticket Header -->
                                 <div class="flex justify-between items-center mb-2">
-                                    <h3 class="text-md font-semibold text-gray-800" x-text="ticket.title"></h3>
+                                    <h3 class="text-sm font-semibold text-gray-800" x-text="ticket.title"></h3>
                                     <button @click.stop="toggleTicketExpand(ticket.id)"
                                         class="text-gray-600 hover:text-gray-900">
                                         <i class="fas"
@@ -1236,11 +1460,11 @@ $pastDueCount = count(array_filter($tickets, function ($ticket) {
                                     </button>
                                 </div>
 
-                                <div class="text-sm text-gray-600">
+                                <div class="text-xs text-gray-600">
                                     <p><strong>Ticket #:</strong> <span x-text="ticket.id"></span></p>
                                     <p><strong>Category:</strong> <span x-text="ticket.category_name"></span></p>
                                     <p><strong>Priority:</strong>
-                                        <span class="px-2 py-1 rounded text-sm" :class="{
+                                        <span class="px-2 py-1 rounded text-xs" :class="{
                     'bg-red-500 text-white': ticket.priority_name === 'High',
                     'bg-yellow-500 text-white': ticket.priority_name === 'Medium',
                     'bg-green-500 text-white': ticket.priority_name === 'Low'
@@ -1256,22 +1480,22 @@ $pastDueCount = count(array_filter($tickets, function ($ticket) {
                                 <div x-show="expandedTicketId === ticket.id" x-cloak class="mt-4 space-y-4">
                                     <!-- Description -->
                                     <div>
-                                        <h4 class="text-md font-semibold text-gray-800">Description</h4>
+                                        <h4 class="text-sm font-semibold text-gray-800">Description</h4>
                                         <p class="text-gray-600"
                                             x-text="ticket.description || 'No description available'"></p>
                                     </div>
 
                                     <!-- Actions -->
                                     <div>
-                                        <h4 class="text-md font-semibold text-gray-800">Actions</h4>
+                                        <h4 class="text-sm font-semibold text-gray-800">Actions</h4>
                                         <div class="space-y-3">
                                             <div>
-                                                <label class="block text-sm font-medium text-gray-700 mb-1">Set
+                                                <label class="block text-xs font-medium text-gray-700 mb-1">Set
                                                     Category</label>
                                                 <select
                                                     x-init="if(!tempAssignments[ticket.id]) initTempAssignment(ticket.id)"
                                                     x-model="tempAssignments[ticket.id] ? tempAssignments[ticket.id].category_id : ''"
-                                                    class="w-full border rounded px-3 py-2 text-sm">
+                                                    class="w-full border rounded px-2 py-1 text-xs">
                                                     <option value="">Select Category</option>
                                                     <template x-for="category in categories" :key="category.id">
                                                         <option :value="category.id" x-text="category.name"></option>
@@ -1281,10 +1505,10 @@ $pastDueCount = count(array_filter($tickets, function ($ticket) {
 
                                             <!-- Assigned To Dropdown -->
                                             <div>
-                                                <label class="block text-sm font-medium text-gray-700 mb-1">Assigned
+                                                <label class="block text-xs font-medium text-gray-700 mb-1">Assigned
                                                     To</label>
                                                 <select x-model="tempAssignments[ticket.id].assigned_to"
-                                                    class="w-full border rounded px-3 py-2 text-sm">
+                                                    class="w-full border rounded px-2 py-1 text-xs">
                                                     <option value="">unassigned</option>
                                                     <template x-for="user in assignableUsers" :key="user.id">
                                                         <option :value="user.id" x-text="user.name"></option>
@@ -1294,9 +1518,9 @@ $pastDueCount = count(array_filter($tickets, function ($ticket) {
 
                                             <div>
                                                 <label
-                                                    class="block text-sm font-medium text-gray-700 mb-1">Priority</label>
+                                                    class="block text-xs font-medium text-gray-700 mb-1">Priority</label>
                                                 <select x-model="tempAssignments[ticket.id].priority_id"
-                                                    class="w-full border rounded px-3 py-2 text-sm">
+                                                    class="w-full border rounded px-2 py-1 text-xs">
                                                     <option value="">Select Priority</option>
                                                     <template x-for="priority in priorities" :key="priority.id">
                                                         <option :value="priority.id" x-text="priority.name"></option>
@@ -1307,12 +1531,12 @@ $pastDueCount = count(array_filter($tickets, function ($ticket) {
                                             <!-- Update and View Details Buttons -->
                                             <div class="flex space-x-2">
                                                 <button @click="updateTicket(ticket.id, ticket)"
-                                                    class="flex-1 bg-blue-500 text-white py-2 rounded hover:bg-blue-600">
+                                                    class="flex-1 bg-blue-500 text-white py-1 rounded hover:bg-blue-600">
                                                     Update
                                                 </button>
                                                 <!-- Replace Delete Button with View Details Button -->
                                                 <button @click="openTicketDetailsModal(ticket.id)"
-                                                    class="flex-1 bg-green-500 text-white py-2 rounded hover:bg-green-600">
+                                                    class="flex-1 bg-green-500 text-white py-1 rounded hover:bg-green-600">
                                                     View Details
                                                 </button>
                                             </div>
@@ -1325,13 +1549,13 @@ $pastDueCount = count(array_filter($tickets, function ($ticket) {
                     <div class="pagination-controls">
                         <div class="flex justify-between">
                             <button @click="prevPage('unseen')" :disabled="currentPages['unseen'] === 1"
-                                class="px-4 py-2 bg-gray-200 rounded">
+                                class="px-3 py-1 bg-gray-200 rounded">
                                 Previous
                             </button>
                             <span x-text="`Page ${currentPages['unseen']}`"></span>
                             <button @click="nextPage('unseen')"
                                 :disabled="currentPages['unseen'] * itemsPerPage >= getFilteredTickets().length"
-                                class="px-4 py-2 bg-gray-200 rounded">
+                                class="px-3 py-1 bg-gray-200 rounded">
                                 Next
                             </button>
                         </div>
@@ -1340,14 +1564,14 @@ $pastDueCount = count(array_filter($tickets, function ($ticket) {
 
                 <!-- Seen Column -->
                 <div class="kanban-column">
-                    <h2 class="text-lg font-semibold text-gray-800 mb-4">Processing & Pending</h2>
+                    <h2 class="text-md font-semibold text-gray-800 mb-4">Processing & Pending</h2>
                     <div class="ticket-list">
                         <template x-for="ticket in paginatedTickets('seen')" :key="ticket.id">
                             <!-- Ticket Card -->
-                            <div class="bg-white rounded-lg shadow-md p-4 mb-4 hover:shadow-lg transition-shadow">
+                            <div class="bg-white rounded-lg shadow-md p-3 mb-4 hover:shadow-lg transition-shadow">
                                 <!-- Ticket Header -->
                                 <div class="flex justify-between items-center mb-2">
-                                    <h3 class="text-md font-semibold text-gray-800" x-text="ticket.title"></h3>
+                                    <h3 class="text-sm font-semibold text-gray-800" x-text="ticket.title"></h3>
                                     <button @click.stop="toggleTicketExpand(ticket.id)"
                                         class="text-gray-600 hover:text-gray-900">
                                         <i class="fas"
@@ -1355,11 +1579,11 @@ $pastDueCount = count(array_filter($tickets, function ($ticket) {
                                     </button>
                                 </div>
 
-                                <div class="text-sm text-gray-600">
+                                <div class="text-xs text-gray-600">
                                     <p><strong>Ticket #:</strong> <span x-text="ticket.id"></span></p>
                                     <p><strong>Category:</strong> <span x-text="ticket.category_name"></span></p>
                                     <p><strong>Priority:</strong>
-                                        <span class="px-2 py-1 rounded text-sm" :class="{
+                                        <span class="px-2 py-1 rounded text-xs" :class="{
                     'bg-red-500 text-white': ticket.priority_name === 'High',
                     'bg-yellow-500 text-white': ticket.priority_name === 'Medium',
                     'bg-green-500 text-white': ticket.priority_name === 'Low'
@@ -1375,22 +1599,22 @@ $pastDueCount = count(array_filter($tickets, function ($ticket) {
                                 <div x-show="expandedTicketId === ticket.id" x-cloak class="mt-4 space-y-4">
                                     <!-- Description -->
                                     <div>
-                                        <h4 class="text-md font-semibold text-gray-800">Description</h4>
+                                        <h4 class="text-sm font-semibold text-gray-800">Description</h4>
                                         <p class="text-gray-600"
                                             x-text="ticket.description || 'No description available'"></p>
                                     </div>
 
                                     <!-- Actions -->
                                     <div>
-                                        <h4 class="text-md font-semibold text-gray-800">Actions</h4>
+                                        <h4 class="text-sm font-semibold text-gray-800">Actions</h4>
                                         <div class="space-y-3">
                                             <div>
-                                                <label class="block text-sm font-medium text-gray-700 mb-1">Set
+                                                <label class="block text-xs font-medium text-gray-700 mb-1">Set
                                                     Category</label>
                                                 <select
                                                     x-init="if(!tempAssignments[ticket.id]) initTempAssignment(ticket.id)"
                                                     x-model="tempAssignments[ticket.id] ? tempAssignments[ticket.id].category_id : ''"
-                                                    class="w-full border rounded px-3 py-2 text-sm">
+                                                    class="w-full border rounded px-2 py-1 text-xs">
                                                     <option value="">Select Category</option>
                                                     <template x-for="category in categories" :key="category.id">
                                                         <option :value="category.id" x-text="category.name"></option>
@@ -1399,10 +1623,10 @@ $pastDueCount = count(array_filter($tickets, function ($ticket) {
                                             </div>
 
                                             <div>
-                                                <label class="block text-sm font-medium text-gray-700 mb-1">Assigned
+                                                <label class="block text-xs font-medium text-gray-700 mb-1">Assigned
                                                     To</label>
                                                 <select x-model="tempAssignments[ticket.id].assigned_to"
-                                                    class="w-full border rounded px-3 py-2 text-sm">
+                                                    class="w-full border rounded px-2 py-1 text-xs">
                                                     <option value="">unassigned</option>
                                                     <template x-for="user in assignableUsers" :key="user.id">
                                                         <option :value="user.id" x-text="user.name"></option>
@@ -1412,9 +1636,9 @@ $pastDueCount = count(array_filter($tickets, function ($ticket) {
 
                                             <div>
                                                 <label
-                                                    class="block text-sm font-medium text-gray-700 mb-1">Priority</label>
+                                                    class="block text-xs font-medium text-gray-700 mb-1">Priority</label>
                                                 <select x-model="tempAssignments[ticket.id].priority_id"
-                                                    class="w-full border rounded px-3 py-2 text-sm">
+                                                    class="w-full border rounded px-2 py-1 text-xs">
                                                     <option value="">Select Priority</option>
                                                     <template x-for="priority in priorities" :key="priority.id">
                                                         <option :value="priority.id" x-text="priority.name"></option>
@@ -1425,12 +1649,12 @@ $pastDueCount = count(array_filter($tickets, function ($ticket) {
                                             <!-- Update and View Details Buttons -->
                                             <div class="flex space-x-2">
                                                 <button @click="updateTicket(ticket.id, ticket)"
-                                                    class="flex-1 bg-blue-500 text-white py-2 rounded hover:bg-blue-600">
+                                                    class="flex-1 bg-blue-500 text-white py-1 rounded hover:bg-blue-600">
                                                     Update
                                                 </button>
                                                 <!-- Replace Delete Button with View Details Button -->
                                                 <button @click="openTicketDetailsModal(ticket.id)"
-                                                    class="flex-1 bg-green-500 text-white py-2 rounded hover:bg-green-600">
+                                                    class="flex-1 bg-green-500 text-white py-1 rounded hover:bg-green-600">
                                                     View Details
                                                 </button>
                                             </div>
@@ -1444,13 +1668,13 @@ $pastDueCount = count(array_filter($tickets, function ($ticket) {
                     <div class="pagination-controls">
                         <div class="flex justify-between">
                             <button @click="prevPage('seen')" :disabled="currentPages['seen'] === 1"
-                                class="px-4 py-2 bg-gray-200 rounded">
+                                class="px-3 py-1 bg-gray-200 rounded">
                                 Previous
                             </button>
                             <span x-text="`Page ${currentPages['seen']}`"></span>
                             <button @click="nextPage('seen')"
                                 :disabled="currentPages['seen'] * itemsPerPage >= getFilteredTickets().length"
-                                class="px-4 py-2 bg-gray-200 rounded">
+                                class="px-3 py-1 bg-gray-200 rounded">
                                 Next
                             </button>
                         </div>
@@ -1459,14 +1683,14 @@ $pastDueCount = count(array_filter($tickets, function ($ticket) {
 
                 <!-- Resolved Column -->
                 <div class="kanban-column">
-                    <h2 class="text-lg font-semibold text-gray-800 mb-4">Resolved</h2>
+                    <h2 class="text-md font-semibold text-gray-800 mb-4">Resolved</h2>
                     <div class="ticket-list">
                         <template x-for="ticket in paginatedTickets('resolved')" :key="ticket.id">
                             <!-- Ticket Card -->
-                            <div class="bg-white rounded-lg shadow-md p-4 mb-4 hover:shadow-lg transition-shadow">
+                            <div class="bg-white rounded-lg shadow-md p-3 mb-4 hover:shadow-lg transition-shadow">
                                 <!-- Ticket Header -->
                                 <div class="flex justify-between items-center mb-2">
-                                    <h3 class="text-md font-semibold text-gray-800" x-text="ticket.title"></h3>
+                                    <h3 class="text-sm font-semibold text-gray-800" x-text="ticket.title"></h3>
                                     <button @click.stop="toggleTicketExpand(ticket.id)"
                                         class="text-gray-600 hover:text-gray-900">
                                         <i class="fas"
@@ -1474,11 +1698,11 @@ $pastDueCount = count(array_filter($tickets, function ($ticket) {
                                     </button>
                                 </div>
 
-                                <div class="text-sm text-gray-600">
+                                <div class="text-xs text-gray-600">
                                     <p><strong>Ticket #:</strong> <span x-text="ticket.id"></span></p>
                                     <p><strong>Category:</strong> <span x-text="ticket.category_name"></span></p>
                                     <p><strong>Priority:</strong>
-                                        <span class="px-2 py-1 rounded text-sm" :class="{
+                                        <span class="px-2 py-1 rounded text-xs" :class="{
                     'bg-red-500 text-white': ticket.priority_name === 'High',
                     'bg-yellow-500 text-white': ticket.priority_name === 'Medium',
                     'bg-green-500 text-white': ticket.priority_name === 'Low'
@@ -1494,22 +1718,22 @@ $pastDueCount = count(array_filter($tickets, function ($ticket) {
                                 <div x-show="expandedTicketId === ticket.id" x-cloak class="mt-4 space-y-4">
                                     <!-- Description -->
                                     <div>
-                                        <h4 class="text-md font-semibold text-gray-800">Description</h4>
+                                        <h4 class="text-sm font-semibold text-gray-800">Description</h4>
                                         <p class="text-gray-600"
                                             x-text="ticket.description || 'No description available'"></p>
                                     </div>
 
                                     <!-- Actions -->
                                     <div>
-                                        <h4 class="text-md font-semibold text-gray-800">Actions</h4>
+                                        <h4 class="text-sm font-semibold text-gray-800">Actions</h4>
                                         <div class="space-y-3">
                                             <div>
-                                                <label class="block text-sm font-medium text-gray-700 mb-1">Set
+                                                <label class="block text-xs font-medium text-gray-700 mb-1">Set
                                                     Category</label>
                                                 <select
                                                     x-init="if(!tempAssignments[ticket.id]) initTempAssignment(ticket.id)"
                                                     x-model="tempAssignments[ticket.id] ? tempAssignments[ticket.id].category_id : ''"
-                                                    class="w-full border rounded px-3 py-2 text-sm">
+                                                    class="w-full border rounded px-2 py-1 text-xs">
                                                     <option value="">Select Category</option>
                                                     <template x-for="category in categories" :key="category.id">
                                                         <option :value="category.id" x-text="category.name"></option>
@@ -1519,10 +1743,10 @@ $pastDueCount = count(array_filter($tickets, function ($ticket) {
 
                                             <!-- Assigned To Dropdown -->
                                             <div>
-                                                <label class="block text-sm font-medium text-gray-700 mb-1">Assigned
+                                                <label class="block text-xs font-medium text-gray-700 mb-1">Assigned
                                                     To</label>
                                                 <select x-model="tempAssignments[ticket.id].assigned_to"
-                                                    class="w-full border rounded px-3 py-2 text-sm">
+                                                    class="w-full border rounded px-2 py-1 text-xs">
                                                     <option value="">unassigned</option>
                                                     <template x-for="user in assignableUsers" :key="user.id">
                                                         <option :value="user.id" x-text="user.name"></option>
@@ -1532,9 +1756,9 @@ $pastDueCount = count(array_filter($tickets, function ($ticket) {
 
                                             <div>
                                                 <label
-                                                    class="block text-sm font-medium text-gray-700 mb-1">Priority</label>
+                                                    class="block text-xs font-medium text-gray-700 mb-1">Priority</label>
                                                 <select x-model="tempAssignments[ticket.id].priority_id"
-                                                    class="w-full border rounded px-3 py-2 text-sm">
+                                                    class="w-full border rounded px-2 py-1 text-xs">
                                                     <option value="">Select Priority</option>
                                                     <template x-for="priority in priorities" :key="priority.id">
                                                         <option :value="priority.id" x-text="priority.name"></option>
@@ -1545,12 +1769,12 @@ $pastDueCount = count(array_filter($tickets, function ($ticket) {
                                             <!-- Update and View Details Buttons -->
                                             <div class="flex space-x-2">
                                                 <button @click="updateTicket(ticket.id, ticket)"
-                                                    class="flex-1 bg-blue-500 text-white py-2 rounded hover:bg-blue-600">
+                                                    class="flex-1 bg-blue-500 text-white py-1 rounded hover:bg-blue-600">
                                                     Update
                                                 </button>
                                                 <!-- Replace Delete Button with View Details Button -->
                                                 <button @click="openTicketDetailsModal(ticket.id)"
-                                                    class="flex-1 bg-green-500 text-white py-2 rounded hover:bg-green-600">
+                                                    class="flex-1 bg-green-500 text-white py-1 rounded hover:bg-green-600">
                                                     View Details
                                                 </button>
                                             </div>
@@ -1562,13 +1786,13 @@ $pastDueCount = count(array_filter($tickets, function ($ticket) {
                     </div>
                     <!-- Pagination Controls -->
                     <button @click="prevPage('resolved')" :disabled="currentPages['resolved'] === 1"
-                        class="px-4 py-2 bg-gray-200 rounded">
+                        class="px-3 py-1 bg-gray-200 rounded">
                         Previous
                     </button>
                     <span x-text="`Page ${currentPages['resolved']}`"></span>
                     <button @click="nextPage('resolved')"
                         :disabled="currentPages['resolved'] * itemsPerPage >= getFilteredTickets().length"
-                        class="px-4 py-2 bg-gray-200 rounded">
+                        class="px-3 py-1 bg-gray-200 rounded">
                         Next
                     </button>
                 </div>
@@ -1577,12 +1801,12 @@ $pastDueCount = count(array_filter($tickets, function ($ticket) {
     </div>
 
     <!-- ALL TICKETS TABLE -->
-    <div class="flex-1 py-4 px-6" x-show="activeViewSection === 'all-tickets'" x-data="ticketsTableView()">
+    <div class="flex-1 py-4 px-8" x-show="activeViewSection === 'all-tickets'" x-data="ticketsTableView()">
         <!-- Aligned Tickets Nav -->
-        <div class="flex items-center justify-between mb-4 border-b border-gray-200 pb-2">
+        <div class="flex items-center justify-between mb-6 border-b border-gray-200 pb-3">
             <div class="flex items-center">
                 <i class="fas fa-bars mr-2 cursor-pointer" @click="isViewsSidebarOpen = !isViewsSidebarOpen"></i>
-                <h1 class="text-xl font-bold text-gray-800">All Tickets</h1>
+                <h1 class="text-lg font-bold text-gray-800">All Tickets</h1>
                 <i class="fas fa-chevron-down ml-2 text-xs"></i>
             </div>
             <!-- Controls for table view -->
@@ -1999,75 +2223,50 @@ $pastDueCount = count(array_filter($tickets, function ($ticket) {
                         </div>
                     </div>
 
-                    <!-- Add Comment Section -->
                     <div class="bg-white border border-gray-200 rounded-lg p-4">
                         <h3 class="text-lg font-semibold mb-2">Add Response</h3>
-
-                        <!-- Rich Text Editor Toolbar -->
-                        <div class="border border-gray-300 rounded-t-lg p-2 bg-gray-50 flex items-center space-x-2">
-                            <button @click="formatText('bold')" class="p-1 hover:bg-gray-200 rounded" title="Bold">
-                                <i class="fas fa-bold"></i>
-                            </button>
-                            <button @click="formatText('italic')" class="p-1 hover:bg-gray-200 rounded" title="Italic">
-                                <i class="fas fa-italic"></i>
-                            </button>
-                            <button @click="formatText('underline')" class="p-1 hover:bg-gray-200 rounded"
-                                title="Underline">
-                                <i class="fas fa-underline"></i>
-                            </button>
-                            <div class="h-6 border-r border-gray-300"></div>
-                            <button @click="formatText('link')" class="p-1 hover:bg-gray-200 rounded"
-                                title="Insert Link">
-                                <i class="fas fa-link"></i>
-                            </button>
-                            <button @click="addAttachment()" class="p-1 hover:bg-gray-200 rounded"
-                                title="Add Attachment">
-                                <i class="fas fa-paperclip"></i>
-                            </button>
-                            <div class="h-6 border-r border-gray-300"></div>
-                            <button @click="formatText('heading')" class="p-1 hover:bg-gray-200 rounded"
-                                title="Heading">
-                                <i class="fas fa-heading"></i>
-                            </button>
-                            <button @click="formatText('list-ul')" class="p-1 hover:bg-gray-200 rounded"
-                                title="Bullet List">
-                                <i class="fas fa-list-ul"></i>
-                            </button>
-                            <button @click="formatText('list-ol')" class="p-1 hover:bg-gray-200 rounded"
-                                title="Numbered List">
-                                <i class="fas fa-list-ol"></i>
-                            </button>
+                        
+                        <div id="editor-container-wrapper" class="mb-4">
                         </div>
 
-                        <!-- Editor -->
-                        <div class="border border-t-0 border-gray-300 rounded-b-lg p-3 min-h-[150px]"
-                            x-ref="commentEditor" contenteditable="true" placeholder="Type your response here...">
-                        </div>
-
-                        <div x-show="attachments.length > 0" class="mt-3 space-y-2">
+                        <!-- Attachments -->
+                        <div x-show="commentAttachments.length > 0" class="mt-3 space-y-2">
                             <h4 class="text-sm font-medium">Attachments:</h4>
-                            <template x-for="(attachment, index) in attachments" :key="index">
-                                <div class="flex items-center justify-between bg-gray-50 p-2 rounded">
-                                    <div class="flex items-center">
-                                        <i class="fas fa-file mr-2 text-gray-500"></i>
-                                        <span x-text="attachment.name"></span>
+                            <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                                <template x-for="(attachment, index) in commentAttachments" :key="index">
+                                    <div
+                                        class="flex items-center justify-between bg-gray-50 p-2 rounded border border-gray-200">
+                                        <div class="flex items-center overflow-hidden">
+                                            <i class="fas fa-file mr-2 text-gray-500"></i>
+                                            <span class="text-sm truncate" x-text="attachment.name"></span>
+                                        </div>
+                                        <button @click="removeCommentAttachment(index)"
+                                            class="text-red-500 hover:text-red-700 ml-2 flex-shrink-0">
+                                            <i class="fas fa-times"></i>
+                                        </button>
                                     </div>
-                                    <button @click="removeAttachment(index)" class="text-red-500 hover:text-red-700">
-                                        <i class="fas fa-times"></i>
-                                    </button>
-                                </div>
-                            </template>
+                                </template>
+                            </div>
                         </div>
 
-                        <div class="mt-4 flex justify-end space-x-3">
-                            <button @click="addComment(true)"
-                                class="bg-gray-500 hover:bg-gray-600 text-white px-4 py-2 rounded">
-                                Internal Note
+                        <!-- Attachment Button and Submit Buttons -->
+                        <div class="mt-4 flex flex-wrap gap-3 justify-between items-center">
+                            <button @click="addAttachment()"
+                                class="flex items-center px-3 py-2 border border-gray-300 rounded hover:bg-gray-50">
+                                <i class="fas fa-paperclip mr-2"></i>
+                                <span>Add Attachment</span>
                             </button>
-                            <button @click="addComment(false)"
-                                class="bg-blue-500 hover:bg-blue-600 text-white px-4 py-2 rounded">
-                                Post Reply
-                            </button>
+
+                            <div class="flex space-x-3">
+                                <button @click="addComment(true)"
+                                    class="bg-gray-500 hover:bg-gray-600 text-white px-4 py-2 rounded">
+                                    Internal Note
+                                </button>
+                                <button @click="addComment(false)"
+                                    class="bg-blue-500 hover:bg-blue-600 text-white px-4 py-2 rounded">
+                                    Post Reply
+                                </button>
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -2137,6 +2336,7 @@ $pastDueCount = count(array_filter($tickets, function ($ticket) {
                             <i class="fas fa-plus-circle mr-2"></i> Add Attachment
                         </button>
 
+                        <!-- In the Ticket Attachments section -->
                         <div class="space-y-2">
                             <template x-for="(attachment, index) in attachments" :key="index">
                                 <div
@@ -2145,11 +2345,18 @@ $pastDueCount = count(array_filter($tickets, function ($ticket) {
                                         <i class="fas fa-paperclip mr-2 text-gray-500"></i>
                                         <span class="text-sm truncate" x-text="attachment.filename"></span>
                                     </div>
-                                    <a :href="attachment.file_path"
-                                        class="ml-2 text-gray-500 hover:text-blue-600 transition-colors p-1" download
-                                        @click.stop="downloadAttachment(attachment)" title="Download attachment">
-                                        <i class="fas fa-download"></i>
-                                    </a>
+                                    <div class="flex items-center">
+                                        <a :href="attachment.file_path"
+                                            class="ml-2 text-gray-500 hover:text-blue-600 transition-colors p-1"
+                                            download @click.stop="downloadAttachment(attachment)"
+                                            title="Download attachment">
+                                            <i class="fas fa-download"></i>
+                                        </a>
+                                        <button @click="deleteAttachment(attachment.id, index)"
+                                            class="ml-1 text-red-500 hover:text-red-700 p-1" title="Delete attachment">
+                                            <i class="fas fa-times"></i>
+                                        </button>
+                                    </div>
                                 </div>
                             </template>
                             <div x-show="attachments.length === 0" class="text-gray-500 text-sm text-center py-2">
@@ -2163,7 +2370,8 @@ $pastDueCount = count(array_filter($tickets, function ($ticket) {
                         <h3 class="text-lg font-semibold mb-3">Additional Information</h3>
                         <div class="space-y-2 text-sm">
                             <p><strong>Last Updated:</strong> <span
-                                    x-text="formatDate(currentTicket?.updated_at)"></span></p>
+                                    x-text="formatDate(currentTicket?.updated_at)"></span>
+                            </p>
                             <p><strong>SLA Status:</strong> <span class="text-green-600">Within SLA</span></p>
                             <p><strong>Department:</strong> <span x-text="currentTicket?.department || 'N/A'"></span>
                             </p>

@@ -5,8 +5,7 @@
 
         body {
             background: #1a1f6b;
-            font-size: 0.875rem;
-            /* Reduce base font size */
+            font-size: 0.75rem;
         }
 
         .navy-bg {
@@ -15,8 +14,7 @@
 
         /* Reduce top navbar height */
         nav.h-16 {
-            height: 3rem !important;
-            /* Reduced from 4rem (h-16) */
+            height: 2.5rem !important;
         }
 
         /* Adjust main content to match reduced header */
@@ -44,18 +42,16 @@
             /* Slightly smaller radius */
         }
 
-        /* Adjust main content margin for smaller sidebar */
         .main-content {
-            margin-left: 14rem;
-            /* Reduced from 16rem */
-            padding: 0.75rem;
-            height: calc(100vh - 48px);
-            /* Adjust for smaller header */
+            margin-left: 12rem;
+            /* Reduce from 14rem to 12rem */
+            padding: 0.5rem;
+            /* Reduce from 0.75rem */
         }
 
         .main-content.collapsed {
-            margin-left: 4rem;
-            /* Reduced from 5rem */
+            margin-left: 3.5rem;
+            /* Reduce from 4rem */
         }
 
         /* Adjust font sizes for various elements */
@@ -77,12 +73,12 @@
             /* Adjust icon positioning */
         }
 
-        /* Make tickets table more compact */
         .ticket-table th,
         .ticket-table td {
-            padding: 0.5rem 0.75rem !important;
-            /* Reduced cell padding */
-            font-size: 0.875rem;
+            padding: 0.35rem 0.5rem !important;
+            /* Even smaller than current 0.5rem 0.75rem */
+            font-size: 0.75rem;
+            /* Reduce from 0.875rem */
         }
 
         /* More compact priority pills */
@@ -99,16 +95,14 @@
             font-size: 0.875rem;
         }
 
-        /* Adjust kanban view */
         .kanban-container {
-            height: calc(100vh - 100px);
-            /* Reduced height */
-            gap: 0.5rem;
-            /* Smaller gaps */
+            gap: 0.35rem;
+            /* Reduce from 0.5rem */
         }
 
         .kanban-column {
-            padding: 0.5rem !important;
+            padding: 0.35rem !important;
+            /* Reduce from 0.5rem */
         }
 
         /* Smaller buttons and form controls */
@@ -140,9 +134,19 @@
             margin-top: 0.375rem !important;
         }
 
-        /* Smaller profile dropdown items */
-        .px-4.py-2 {
-            padding: 0.375rem 1rem !important;
+        .px-4 {
+            padding-left: 0.75rem !important;
+            padding-right: 0.75rem !important;
+        }
+
+        .py-2 {
+            padding-top: 0.35rem !important;
+            padding-bottom: 0.35rem !important;
+        }
+
+        .my-2 {
+            margin-top: 0.35rem !important;
+            margin-bottom: 0.35rem !important;
         }
 
         /* Adjust spacing in ticket detail view */
@@ -162,7 +166,13 @@
             margin: 0 auto;
         }
 
-        /* Fix icon sizing */
+        .fa,
+        .fas,
+        .far,
+        .fab {
+            font-size: 0.85em !important;
+        }
+
         .text-sm {
             font-size: 0.75rem !important;
         }
