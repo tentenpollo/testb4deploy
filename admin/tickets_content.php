@@ -72,6 +72,8 @@ $pastDueCount = count(array_filter($tickets, function ($ticket) {
             commentAttachments: [],
             editorInitialized: false,
             editor: null,
+            activeTab: 'user',
+            isGuestUser: false,
 
             openTicketDetailsModal(ticketId) {
                 window.dispatchEvent(new CustomEvent('open-ticket-modal', {
@@ -85,6 +87,19 @@ $pastDueCount = count(array_filter($tickets, function ($ticket) {
                 });
 
                 console.log("Ticket modal initialized and listening for events");
+            },
+
+            get filteredTicketHistory() {
+                if (this.activeTab === 'user') {
+                    return this.ticketHistory.filter(activity =>
+                        activity.type === 'comment' && activity.is_internal === '0'
+                    );
+                } else if (this.activeTab === 'internal') {
+                    return this.ticketHistory.filter(activity =>
+                        activity.type === 'comment' && activity.is_internal === '1'
+                    );
+                }
+                return this.ticketHistory;
             },
 
             downloadAttachment(attachment) {
@@ -195,34 +210,6 @@ $pastDueCount = count(array_filter($tickets, function ($ticket) {
 
                 // Store the ID for later use
                 this.editorContainerId = newContainerId;
-            },
-
-            cleanupEditor() {
-                // Remove any existing editor instance
-                if (this.editor) {
-                    try {
-                        // Remove the editor completely
-                        this.editor = null;
-
-                        // Reset the initialized flag
-                        this.editorInitialized = false;
-
-                        // Clear the editor container if it exists
-                        if (this.$refs.editorContainer) {
-                            this.$refs.editorContainer.innerHTML = '';
-                        }
-
-                        // Remove any Quill toolbars that might be left in the DOM
-                        const oldToolbars = document.querySelectorAll('.ql-toolbar');
-                        oldToolbars.forEach(toolbar => {
-                            if (toolbar.parentNode && toolbar.closest('.ticket-editor-container') !== null) {
-                                toolbar.parentNode.removeChild(toolbar);
-                            }
-                        });
-                    } catch (error) {
-                        console.error("Error cleaning up editor:", error);
-                    }
-                }
             },
 
             initializeEditor() {
@@ -336,7 +323,7 @@ $pastDueCount = count(array_filter($tickets, function ($ticket) {
             },
 
             closeModal() {
-                this.cleanupEditor();
+                this.destroyEditor();
 
                 this.isOpen = false;
                 this.currentTicket = null;
@@ -391,6 +378,13 @@ $pastDueCount = count(array_filter($tickets, function ($ticket) {
                     const data = await response.json();
 
                     if (data.success) {
+                        console.log("Raw history data:", data.history);
+                        // Log each item's is_internal value
+                        data.history.forEach(item => {
+                            console.log(`Comment "${item.content.substring(0, 20)}..." is_internal:`,
+                                item.is_internal,
+                                "type:", typeof item.is_internal);
+                        });
                         this.ticketHistory = data.history;
                     } else {
                         alert('Error loading ticket history: ' + data.error);
@@ -421,7 +415,7 @@ $pastDueCount = count(array_filter($tickets, function ($ticket) {
 
                     if (data.success) {
                         this.assignableUsers = data.users;
-                        console.log(assignableUsers);
+                        console.log(this.assignableUsers);
                     }
                 } catch (error) {
                     console.error('Failed to load assignable users:', error);
@@ -524,41 +518,83 @@ $pastDueCount = count(array_filter($tickets, function ($ticket) {
                 const commentContent = this.editor.root.innerHTML;
 
                 if (!this.editor.getText().trim()) {
-                    alert('Please enter a comment');
+                    this.showNotification('Please enter a comment', 'error');
                     return;
                 }
 
                 try {
+                    // Show loading indicator
+                    this.isSubmitting = true;
+
                     const formData = new FormData();
                     formData.append('ticket_id', this.currentTicket.id);
                     formData.append('content', commentContent);
                     formData.append('is_private', isPrivate ? 1 : 0);
 
-                    this.commentAttachments.forEach((attachment, index) => {
-                        formData.append(`attachment_${index}`, attachment.file);
-                    });
+                    // Add any uploaded attachments
+                    if (this.commentAttachments && this.commentAttachments.length > 0) {
+                        this.commentAttachments.forEach((attachment, index) => {
+                            if (attachment.file) {
+                                formData.append(`attachments[]`, attachment.file);
+                            }
+                        });
+                    }
+
+                    // Log the form data for debugging
+                    console.log('Submitting comment with ticket ID:', this.currentTicket.id);
+                    console.log('Is private:', isPrivate);
+                    console.log('Content length:', commentContent.length);
+                    console.log('Attachments count:', this.commentAttachments.length);
 
                     const response = await fetch('ajax/ajax_handlers.php?action=add_comment', {
                         method: 'POST',
                         body: formData
                     });
 
-                    const data = await response.json();
+                    const responseText = await response.text();
+                    console.log('Raw response:', responseText);
+
+                    let data;
+                    try {
+                        data = JSON.parse(responseText);
+                    } catch (jsonError) {
+                        console.error('JSON parse error:', jsonError);
+                        this.showNotification('Invalid response format from server', 'error');
+                        return;
+                    }
 
                     if (data.success) {
-                        // Clear the editor
                         this.editor.setText('');
-                        // Clear comment attachments
                         this.commentAttachments = [];
                         await this.loadTicketHistory(this.currentTicket.id);
-                        alert('Comment added successfully');
+                        this.showNotification('Comment added successfully', 'success');
                     } else {
-                        alert('Error adding comment: ' + data.error);
+                        this.showNotification('Error adding comment: ' + (data.error || 'Unknown error'), 'error');
                     }
                 } catch (error) {
                     console.error('Failed to add comment:', error);
-                    alert('Failed to add comment. Please try again.');
+                    this.showNotification('Failed to add comment. Please try again.', 'error');
+                } finally {
+                    this.isSubmitting = false;
                 }
+            },
+
+            showNotification(message, type = 'info') {
+                const notification = document.createElement('div');
+                notification.classList.add(
+                    'fixed', 'top-4', 'right-4', 'z-50', 'px-4', 'py-2', 'rounded', 'text-white',
+                    type === 'success' ? 'bg-green-500' : 'bg-red-500'
+                );
+                notification.textContent = message;
+
+                document.body.appendChild(notification);
+
+                setTimeout(() => {
+                    notification.classList.add('animate-fade-out');
+                    setTimeout(() => {
+                        document.body.removeChild(notification);
+                    }, 500);
+                }, 3000);
             },
 
             async archiveTicket() {
@@ -599,41 +635,6 @@ $pastDueCount = count(array_filter($tickets, function ($ticket) {
                 if (!dateString) return 'N/A';
                 const date = new Date(dateString);
                 return date.toLocaleString();
-            },
-
-            formatText(command) {
-                // First, ensure the editor has focus
-                this.$refs.commentEditor.focus();
-
-                switch (command) {
-                    case 'bold':
-                        document.execCommand('bold', false, null);
-                        break;
-                    case 'italic':
-                        document.execCommand('italic', false, null);
-                        break;
-                    case 'underline':
-                        document.execCommand('underline', false, null);
-                        break;
-                    case 'link':
-                        const url = prompt('Enter the URL:');
-                        if (url) {
-                            document.execCommand('createLink', false, url);
-                        }
-                        break;
-                    case 'heading':
-                        // For headings, we'll use formatBlock which is more reliable
-                        document.execCommand('formatBlock', false, '<h3>');
-                        break;
-                    case 'list-ul':
-                        // Use the built-in command for unordered lists
-                        document.execCommand('insertUnorderedList', false, null);
-                        break;
-                    case 'list-ol':
-                        // Use the built-in command for ordered lists
-                        document.execCommand('insertOrderedList', false, null);
-                        break;
-                }
             },
 
             async addAttachment() {
@@ -689,13 +690,11 @@ $pastDueCount = count(array_filter($tickets, function ($ticket) {
                 }
             },
 
-            removeAttachment(index) {
-                this.attachments.splice(index, 1);
-            },
-
             removeCommentAttachment(index) {
                 this.commentAttachments.splice(index, 1);
-            }
+            },
+
+
         };
     }
 
@@ -2152,80 +2151,85 @@ $pastDueCount = count(array_filter($tickets, function ($ticket) {
 
                     <!-- Ticket Activity Timeline -->
                     <div>
-                        <h3 class="text-lg font-semibold mb-4">Activity & Comments</h3>
-                        <div class="space-y-4">
-                            <template x-for="(activity, index) in ticketHistory" :key="index">
-                                <div class="p-4 border border-gray-200 rounded-lg">
-                                    <div class="flex justify-between items-start">
-                                        <div class="flex items-center">
-                                            <div
-                                                class="w-10 h-10 rounded-full bg-blue-100 flex items-center justify-center mr-3">
-                                                <span class="font-semibold text-blue-700"
-                                                    x-text="activity.user_name?.charAt(0) || 'U'"></span>
+                        <h3 class="text-lg font-semibold mb-2">Activity & Comments</h3>
+
+                        <div class="flex border-b border-gray-200 mb-4">
+                            <button @click="activeTab = 'user'"
+                                :class="activeTab === 'user' ? 'border-b-2 border-blue-500 text-blue-600' : 'text-gray-500 hover:text-gray-700'"
+                                class="py-2 px-4 font-medium">
+                                User Communication
+                            </button>
+                            <button @click="activeTab = 'internal'"
+                                :class="activeTab === 'internal' ? 'border-b-2 border-blue-500 text-blue-600' : 'text-gray-500 hover:text-gray-700 disabled:opacity-50'"
+                                class="py-2 px-4 font-medium" :disabled="isGuestUser"
+                                :title="isGuestUser ? 'Agent access only' : ''">
+                                Internal Notes
+                            </button>
+                        </div>
+
+                        <!-- This is the tab content area where comments should be displayed -->
+                        <div class="bg-gray-50 rounded-lg border border-gray-200 h-96 flex flex-col">
+                            <div class="flex-1 overflow-y-auto p-4 space-y-3">
+                                <!-- This is where comments should appear -->
+                                <template x-for="(activity, index) in filteredTicketHistory" :key="index">
+                                    <!-- Comment display code -->
+                                    <div class="flex flex-col" :class="{
+                'items-end': activity.is_agent && !activity.is_internal, 
+                'items-start': !activity.is_agent || activity.is_internal
+            }">
+                                        <div class="max-w-[80%] mb-1">
+                                            <div class="p-3 rounded-lg shadow-sm" :class="{
+                        'bg-blue-100 border border-blue-200 rounded-tr-none': activity.is_agent && !activity.is_internal, 
+                        'bg-white border border-gray-200 rounded-tl-none': !activity.is_agent,
+                        'bg-yellow-50 border border-yellow-200 rounded-tl-none': activity.is_internal
+                    }">
+                                                <!-- Comment content -->
+                                                <div class="flex items-start gap-2 mb-2">
+                                                    <!-- Avatar -->
+                                                    <div class="w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0"
+                                                        :class="{
+                                    'bg-blue-500 text-white': activity.is_agent && !activity.is_internal,
+                                    'bg-gray-500 text-white': !activity.is_agent,
+                                    'bg-yellow-500 text-white': activity.is_internal
+                                }">
+                                                        <span class="text-xs font-bold"
+                                                            x-text="activity.user_name?.charAt(0) || 'U'"></span>
+                                                    </div>
+                                                    <!-- Username and timestamp -->
+                                                    <div class="flex-1">
+                                                        <div class="flex justify-between items-center">
+                                                            <span class="font-medium text-sm"
+                                                                x-text="activity.user_name || 'Unknown User'"></span>
+                                                            <span class="text-xs text-gray-500"
+                                                                x-text="formatDate(activity.created_at)"></span>
+                                                        </div>
+                                                        <div x-show="activity.is_internal"
+                                                            class="text-xs bg-yellow-200 text-yellow-800 px-2 py-0.5 rounded inline-block mb-1">
+                                                            Internal Note
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                                <!-- Comment text -->
+                                                <div class="text-sm email-content break-words"
+                                                    x-html="activity.content"></div>
                                             </div>
-                                            <div>
-                                                <p class="font-medium" x-text="activity.user_name || 'Unknown User'">
-                                                </p>
-                                                <p class="text-xs text-gray-500"
-                                                    x-text="formatDate(activity.created_at)"></p>
-                                            </div>
-                                        </div>
-                                        <div>
-                                            <span class="text-xs px-2 py-1 rounded" :class="{
-                                                    'bg-purple-100 text-purple-800': activity.type === 'comment',
-                                                    'bg-blue-100 text-blue-800': activity.type === 'status_change',
-                                                    'bg-green-100 text-green-800': activity.type === 'assignment',
-                                                    'bg-yellow-100 text-yellow-800': activity.type === 'attachment',
-                                                    'bg-orange-100 text-orange-800': activity.type === 'priority_change',
-                                                    'bg-red-100 text-red-800': activity.type === 'archive'
-                                                }" x-text="activity.type.replace('_', ' ')"></span>
                                         </div>
                                     </div>
+                                </template>
 
-                                    <!-- Comment content -->
-                                    <div class="mt-3 email-content bg-gray-50 p-3 rounded"
-                                        x-show="activity.type === 'comment'" x-html="activity.content"></div>
-
-                                    <!-- Status change -->
-                                    <div class="mt-3 text-gray-700" x-show="activity.type === 'status_change'">
-                                        Changed status from <span class="font-medium"
-                                            x-text="activity.old_value"></span> to
-                                        <span class="font-medium" x-text="activity.new_value"></span>
-                                    </div>
-
-                                    <!-- Priority change -->
-                                    <div class="mt-3 text-gray-700" x-show="activity.type === 'priority_change'">
-                                        Changed priority from <span class="font-medium"
-                                            x-text="activity.old_value"></span> to
-                                        <span class="font-medium" x-text="activity.new_value"></span>
-                                    </div>
-
-                                    <!-- Assignment -->
-                                    <div class="mt-3 text-gray-700" x-show="activity.type === 'assignment'">
-                                        Assigned ticket to <span class="font-medium" x-text="activity.new_value"></span>
-                                    </div>
-
-                                    <!-- Attachment -->
-                                    <div class="mt-3" x-show="activity.type === 'attachment'">
-                                        <div class="flex items-center p-2 bg-white border border-gray-200 rounded">
-                                            <i class="fas fa-paperclip mr-2 text-gray-500"></i>
-                                            <span class="text-blue-600 hover:underline cursor-pointer"
-                                                x-text="activity.new_value"></span>
-                                        </div>
-                                    </div>
-
-                                    <!-- Archive -->
-                                    <div class="mt-3 text-gray-700" x-show="activity.type === 'archive'">
-                                        <span class="font-medium" x-text="activity.new_value"></span>
-                                    </div>
+                                <!-- Empty state -->
+                                <div x-show="filteredTicketHistory.length === 0"
+                                    class="flex flex-col items-center justify-center h-full text-gray-500">
+                                    <i class="fas fa-comments text-4xl mb-2"></i>
+                                    <p>No activity in this category yet</p>
                                 </div>
-                            </template>
+                            </div>
                         </div>
                     </div>
 
                     <div class="bg-white border border-gray-200 rounded-lg p-4">
                         <h3 class="text-lg font-semibold mb-2">Add Response</h3>
-                        
+
                         <div id="editor-container-wrapper" class="mb-4">
                         </div>
 

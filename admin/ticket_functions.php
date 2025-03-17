@@ -51,11 +51,11 @@ function get_ticket_history($ticket_id)
 
     $ticket_id = $db->real_escape_string($ticket_id);
 
-    $query = "SELECT h.*, u.name AS user_name 
-              FROM ticket_history h
-              LEFT JOIN users u ON h.user_id = u.id
+    $query = "SELECT h.*, s.name AS user_name 
+              FROM ticket_comments h
+              LEFT JOIN staff_members s ON h.user_id = s.id
               WHERE h.ticket_id = '$ticket_id'
-              ORDER BY h.created_at DESC";
+              ORDER BY h.created_at DESC LIMIT 0, 25";
 
     $result = $db->query($query);
 
@@ -68,7 +68,6 @@ function get_ticket_history($ticket_id)
 
     return $history;
 }
-
 
 function get_ticket_attachments($ticket_id)
 {
@@ -92,19 +91,81 @@ function get_ticket_attachments($ticket_id)
     return $attachments;
 }
 
-function add_ticket_comment($ticket_id, $user_id, $content, $is_private = false)
+function add_ticket_comment($ticket_id, $user_id, $content, $is_private = false, $attachments = [])
 {
     $db = db_connect();
 
-    $ticket_id = $db->real_escape_string($ticket_id);
-    $user_id = $db->real_escape_string($user_id);
-    $content = $db->real_escape_string($content);
-    $is_private = $is_private ? 1 : 0;
+    if (!$db) {
+        error_log("Database connection failed in add_ticket_comment");
+        return false;
+    }
 
-    $query = "INSERT INTO ticket_history (ticket_id, user_id, type, content, is_private, created_at)
-              VALUES ('$ticket_id', '$user_id', 'comment', '$content', '$is_private', NOW())";
+    $db->begin_transaction();
 
-    return $db->query($query);
+    try {
+        $ticket_id = $db->real_escape_string($ticket_id);
+        $user_id = $db->real_escape_string($user_id);
+        $content = $db->real_escape_string($content);
+        $is_private = $is_private ? 1 : 0;
+
+        $query = "INSERT INTO ticket_comments (ticket_id, user_id, type, content, is_internal, created_at)
+                VALUES ('$ticket_id', '$user_id', 'comment', '$content', '$is_private', NOW())";
+
+        if (!$db->query($query)) {
+            throw new Exception("Failed to insert comment: " . $db->error);
+        }
+
+        $comment_id = $db->insert_id;
+
+        if (!empty($attachments)) {
+            $upload_dir = '../../uploads/tickets/' . $ticket_id;
+
+            if (!file_exists($upload_dir)) {
+                if (!mkdir($upload_dir, 0755, true)) {
+                    throw new Exception("Failed to create upload directory");
+                }
+            }
+
+            foreach ($attachments as $attachment) {
+                if ($attachment['error'] === UPLOAD_ERR_OK) {
+                    $tmp_name = $attachment['tmp_name'];
+                    $name = basename($attachment['name']);
+                    $size = $attachment['size'];
+
+                    $file_path = $upload_dir . '/' . time() . '_' . $name;
+
+                    if (move_uploaded_file($tmp_name, $file_path)) {
+                        $attachment_name = $db->real_escape_string($name);
+                        $attachment_path = $db->real_escape_string($file_path);
+
+                        $attachment_query = "INSERT INTO attachments (ticket_id, user_id, file_name, file_path, file_size, comment_id, created_at)
+                                            VALUES ('$ticket_id', '$user_id', '$attachment_name', '$attachment_path', '$size', '$comment_id', NOW())";
+
+                        if (!$db->query($attachment_query)) {
+                            throw new Exception("Failed to insert attachment record: " . $db->error);
+                        }
+
+                        $history_query = "INSERT INTO ticket_history (ticket_id, user_id, type, content, is_internal, created_at)
+                                         VALUES ('$ticket_id', '$user_id', 'attachment', 'Uploaded file: $attachment_name', '$is_private', NOW())";
+
+                        $db->query($history_query);
+                    } else {
+                        throw new Exception("Failed to move uploaded file");
+                    }
+                }
+            }
+        }
+
+        // If we reach here, commit the transaction
+        $db->commit();
+        return $comment_id;
+
+    } catch (Exception $e) {
+        // Something went wrong, rollback changes
+        $db->rollback();
+        error_log("Error in add_ticket_comment: " . $e->getMessage());
+        return false;
+    }
 }
 
 function update_ticket_status($ticket_id, $user_id, $new_status)
@@ -184,26 +245,27 @@ function update_ticket_priority($ticket_id, $user_id, $new_priority_id)
     return false;
 }
 
-function delete_ticket_attachment($attachment_id, $ticket_id) {
+function delete_ticket_attachment($attachment_id, $ticket_id)
+{
     $db = db_connect();
-    
+
     $attachment_id = $db->real_escape_string($attachment_id);
     $ticket_id = $db->real_escape_string($ticket_id);
-    
+
     // First, get the file path to delete the actual file
     $query = "SELECT file_path FROM attachments WHERE id = '$attachment_id' AND ticket_id = '$ticket_id'";
     $result = $db->query($query);
-    
+
     if ($result && $result->num_rows > 0) {
         $row = $result->fetch_assoc();
         $file_path = $row['file_path'];
-        
+
         // Delete the file from filesystem
         if (file_exists($file_path) && unlink($file_path)) {
             // If file deleted successfully, remove from database
             $delete_query = "DELETE FROM attachments WHERE id = '$attachment_id' AND ticket_id = '$ticket_id'";
             $delete_result = $db->query($delete_query);
-            
+
             if ($delete_result) {
                 // Add to ticket history
                 $user_id = isset($_SESSION['user_id']) ? $_SESSION['user_id'] : 0;
@@ -212,13 +274,13 @@ function delete_ticket_attachment($attachment_id, $ticket_id) {
                                 VALUES 
                                 ('$ticket_id', '$user_id', 'attachment_delete', 'Attachment deleted', NOW())";
                 $db->query($history_query);
-                
+
                 return true;
             }
         } else {
             $delete_query = "DELETE FROM attachments WHERE id = '$attachment_id' AND ticket_id = '$ticket_id'";
             $delete_result = $db->query($delete_query);
-            
+
             if ($delete_result) {
                 // Add to ticket history
                 $user_id = isset($_SESSION['user_id']) ? $_SESSION['user_id'] : 0;
@@ -227,12 +289,12 @@ function delete_ticket_attachment($attachment_id, $ticket_id) {
                                 VALUES 
                                 ('$ticket_id', '$user_id', 'attachment_delete', 'Attachment record deleted (file not found)', NOW())";
                 $db->query($history_query);
-                
+
                 return true;
             }
         }
     }
-    
+
     return false;
 }
 

@@ -203,10 +203,30 @@ if (isset($_GET['action'])) {
                 $is_private = isset($_POST['is_private']) ? (bool) $_POST['is_private'] : false;
                 $user_id = $_SESSION['user_id'];
 
-                $result = add_ticket_comment($ticket_id, $user_id, $content, $is_private);
+                // Process any attachments
+                $attachments = [];
+                if (isset($_FILES['attachments'])) {
+                    // If multiple files were uploaded
+                    if (is_array($_FILES['attachments']['name'])) {
+                        for ($i = 0; $i < count($_FILES['attachments']['name']); $i++) {
+                            $attachments[] = [
+                                'name' => $_FILES['attachments']['name'][$i],
+                                'type' => $_FILES['attachments']['type'][$i],
+                                'tmp_name' => $_FILES['attachments']['tmp_name'][$i],
+                                'error' => $_FILES['attachments']['error'][$i],
+                                'size' => $_FILES['attachments']['size'][$i]
+                            ];
+                        }
+                    } else {
+                        // Single file upload
+                        $attachments[] = $_FILES['attachments'];
+                    }
+                }
+
+                $result = add_ticket_comment($ticket_id, $user_id, $content, $is_private, $attachments);
 
                 if ($result) {
-                    echo json_encode(['success' => true]);
+                    echo json_encode(['success' => true, 'comment_id' => $result]);
                 } else {
                     echo json_encode(['success' => false, 'error' => 'Failed to add comment']);
                 }
