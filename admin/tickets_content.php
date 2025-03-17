@@ -105,7 +105,7 @@ $pastDueCount = count(array_filter($tickets, function ($ticket) {
             downloadAttachment(attachment) {
                 const fullPath = attachment.file_path;
                 const filename = fullPath.split(/[\/\\]/).pop();
-                
+
                 const downloadUrl = `ajax/ajax_handlers.php?action=download_attachment&ticket_id=${this.currentTicket.id}&filename=${encodeURIComponent(filename)}`;
 
                 const iframe = document.createElement('iframe');
@@ -440,6 +440,11 @@ $pastDueCount = count(array_filter($tickets, function ($ticket) {
                         this.currentTicket.status = newStatus;
                         await this.loadTicketHistory(this.currentTicket.id);
                         alert('Status updated successfully');
+
+                        // Emit an event to notify other components
+                        window.dispatchEvent(new CustomEvent('ticket-status-updated', {
+                            detail: { ticketId: this.currentTicket.id, newStatus: newStatus }
+                        }));
                     } else {
                         alert('Error updating status: ' + data.error);
                     }
@@ -1044,6 +1049,17 @@ $pastDueCount = count(array_filter($tickets, function ($ticket) {
                 this.$watch('currentPage', () => {
                     this.updatePaginatedTickets();
                 });
+
+                window.addEventListener('ticket-status-updated', (event) => {
+                    const { ticketId, newStatus } = event.detail;
+                    const ticketIndex = this.tickets.findIndex(ticket => ticket.id === ticketId);
+                    if (ticketIndex !== -1) {
+                        this.tickets[ticketIndex].status = newStatus;
+                        this.updateTicketCounts(); // Update the counts if necessary
+                        this.getFilteredTickets(); // Refresh the filtered tickets
+                    }
+                });
+
             },
 
             async fetchStaffMembers() {
@@ -2280,7 +2296,6 @@ $pastDueCount = count(array_filter($tickets, function ($ticket) {
                     <div class="bg-white border border-gray-200 rounded-lg p-4">
                         <h3 class="text-lg font-semibold mb-4">Ticket Actions</h3>
 
-                        <!-- Status Update -->
                         <div class="mb-4">
                             <h4 class="font-medium mb-2">Update Status</h4>
                             <div class="flex flex-wrap gap-2">
