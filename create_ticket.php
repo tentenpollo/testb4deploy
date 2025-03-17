@@ -20,7 +20,8 @@ if (is_guest() && isset($_SESSION['guest_email'])) {
 // Get categories from database
 function getCategories() {
     $db = db_connect();
-    $result = $db->query("SELECT id, name FROM categories ORDER BY name");
+    // Fix: Select the correct columns based on ticketing_system.sql schema
+    $result = $db->query("SELECT categories.id, categories.name, categories.description FROM categories ORDER BY name");
     $categories = [];
     
     if ($result) {

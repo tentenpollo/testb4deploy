@@ -3,7 +3,7 @@ require_once 'includes/config.php';
 require_once 'includes/functions.php';
 
 if (is_logged_in()) {
-    header("Location: dashboard.php");
+    header("Location: users/user_dashboard.php");
     exit;
 }
 
@@ -95,8 +95,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $_SESSION['user_id'] = $user_id;
 
             // Redirect to dashboard or redirect URL
-            $redirect = $_SESSION['redirect_after_login'] ?? 'dashboard.php';
-            unset($_SESSION['redirect_after_login']);
+            $redirect = 'users/user_dashboard';
 
             header("Location: $redirect");
             exit;

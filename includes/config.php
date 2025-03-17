@@ -8,7 +8,7 @@ session_start();
 define('DB_HOST', 'localhost');
 define('DB_NAME', 'ticketing_system');
 define('DB_USER', 'root');
-define('DB_PASS', '');
+define('DB_PASS', 'foobar');
 
 // Global connection variable
 $mysqli = null;
