@@ -93,11 +93,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             // Log the user in
             $user_id = $db->insert_id;
             $_SESSION['user_id'] = $user_id;
+            $_SESSION['is_staff'] = false; // Add this line to identify as regular user
+            
+            // Clear any previous redirect
+            if (isset($_SESSION['redirect_after_login'])) {
+                unset($_SESSION['redirect_after_login']);
+            }
 
-            // Redirect to dashboard or redirect URL
-            $redirect = 'users/user_dashboard';
-
-            header("Location: $redirect");
+            // Redirect to dashboard
+            header("Location: users/user_dashboard.php");
             exit;
         } else {
             $errors[] = "Registration failed. Please try again. Error: " . $db->error;

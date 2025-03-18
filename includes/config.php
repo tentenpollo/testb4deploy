@@ -33,7 +33,7 @@ function db_connect() {
 }
 
 function is_logged_in() {
-    return isset($_SESSION['user_id']);
+    return isset($_SESSION['user_id']) && !empty($_SESSION['user_id']);
 }
 
 function is_guest() {
