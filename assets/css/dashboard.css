@@ -458,7 +458,19 @@ body {
 
         /* Transition classes */
         .transition {
-            transition-property: all;
+            transition-property: height, opacity;
             transition-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
             transition-duration: 200ms;
+        }
+
+        /* Add these responsive layout styles */
+        .h-auto {
+            height: auto !important;
+            min-height: calc(100vh - 4rem) !important;
+            /* 4rem accounts for the top navbar */
+        }
+
+        /* Handle overflow for expanded content */
+        .overflow-x-hidden {
+            overflow-x: hidden;
         }

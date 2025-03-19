@@ -18,7 +18,7 @@ require_once '../includes/config.php';
 
 <body x-data="{ 
     sidebarOpen: true, 
-    activeView: '<?php echo isset($_GET['view']) && in_array($_GET['view'], ['staff-management', 'tickets', 'priorities', 'categories', 'reports']) ? htmlspecialchars($_GET['view']) : 'tickets'; ?>', 
+    activeView: '<?php echo isset($_GET['view']) && in_array($_GET['view'], ['users','staff-management', 'tickets', 'priorities', 'categories', 'reports']) ? htmlspecialchars($_GET['view']) : 'tickets'; ?>', 
     openSubmenu: '<?php echo isset($_GET['view']) && $_GET['view'] === 'staff-management' ? 'users' : ''; ?>',
     searchExpanded: false,
     isViewsListOpen: true,
@@ -110,30 +110,31 @@ require_once '../includes/config.php';
                     </button>
 
                     <div>
-                        <button @click="openSubmenu = openSubmenu === 'users' ? '' : 'users'"
+                    <button @click="openSubmenu = openSubmenu === 'users' ? '' : 'users'"
+                        class="w-full flex items-center space-x-3 px-3 py-2 rounded-lg text-white hover:bg-white/10 nav-item"
+                        :class="{ 'active': activeView === 'users' || activeView === 'staff-management' }">
+                        <i class="fas fa-users"></i>
+                        <span :class="{ 'hidden': !sidebarOpen }">Users/Agents</span>
+                        <i class="fas fa-chevron-down ml-auto text-sm"
+                            :class="{ 'hidden': !sidebarOpen, 'rotate-180': openSubmenu === 'users' }"></i>
+                    </button>
+                    <!-- Submenu -->
+                    <div x-show="openSubmenu === 'users'" class="pl-8 mt-2 space-y-2 submenu"
+                        :class="{ 'open': openSubmenu === 'users' }">
+                        <button @click="activeView = 'users'"
                             class="w-full flex items-center space-x-3 px-3 py-2 rounded-lg text-white hover:bg-white/10 nav-item"
-                            :class="{ 'active': activeView.startsWith('users') }">
-                            <i class="fas fa-users"></i>
-                            <span :class="{ 'hidden': !sidebarOpen }">Users/Agents</span>
-                            <i class="fas fa-chevron-down ml-auto text-sm"
-                                :class="{ 'hidden': !sidebarOpen, 'rotate-180': openSubmenu === 'users' }"></i>
+                            :class="{ 'active': activeView === 'users' }">
+                            <i class="fas fa-user"></i>
+                            <span>Users</span>
                         </button>
-                        <!-- Submenu -->
-                        <div x-show="openSubmenu === 'users'" class="pl-8 mt-2 space-y-2 submenu"
-                            :class="{ 'open': openSubmenu === 'users' }">
-                            <button @click="activeView = 'users'"
-                                class="w-full flex items-center space-x-3 px-3 py-2 rounded-lg text-white hover:bg-white/10 nav-item"
-                                :class="{ 'active': activeView === 'users' }">
-                                <i class="fas fa-user"></i>
-                                <span>Users</span>
-                            </button>
-                            <button @click="activeView = 'staff-management'"
-                                class="w-full flex items-center space-x-3 px-3 py-2 rounded-lg text-white hover:bg-white/10 nav-item"
-                                :class="{ 'active': activeView === 'staff-management' }">
-                                <i class="fas fa-user-plus"></i>
-                                <span>Staff Management</span>
-                        </div>
+                        <button @click="activeView = 'staff-management'"
+                            class="w-full flex items-center space-x-3 px-3 py-2 rounded-lg text-white hover:bg-white/10 nav-item"
+                            :class="{ 'active': activeView === 'staff-management' }">
+                            <i class="fas fa-user-plus"></i>
+                            <span>Staff Management</span>
+                        </button>
                     </div>
+                </div>
 
                     <div>
                         <button @click="openSubmenu = openSubmenu === 'registration' ? '' : 'registration'"
@@ -208,6 +209,9 @@ require_once '../includes/config.php';
             :class="{ 'collapsed': !sidebarOpen }">
             <div x-show="activeView === 'tickets'">
                 <?php include 'tickets_content.php'; ?>
+            </div>
+            <div x-show="activeView === 'users'">
+                <?php include 'users.php'; ?>
             </div>
             <div x-show="activeView === 'staff-management'">
                 <?php include 'staff_management.php'; ?>
