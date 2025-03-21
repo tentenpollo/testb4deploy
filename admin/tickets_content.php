@@ -2353,21 +2353,24 @@ $pastDueCount = count(array_filter($tickets, function ($ticket) {
                         <!-- Priority Update -->
                         <div class="mb-4">
                             <h4 class="font-medium mb-2">Update Priority</h4>
-                            <select @change="updatePriority($event.target.value)"
-                                class="w-full p-2 border border-gray-300 rounded" :value="currentTicket?.priority_id">
+                            <select x-model="currentTicket.priority_id" @change="updatePriority($event.target.value)"
+                                class="w-full p-2 border border-gray-300 rounded">
                                 <template x-for="priority in priorities" :key="priority.id">
-                                    <option :value="priority.id" x-text="priority.name"></option>
+                                    <option :value="priority.id" :selected="priority.id === currentTicket?.priority_id"
+                                        x-text="priority.name"></option>
                                 </template>
                             </select>
                         </div>
 
+                        <!-- Assign To -->
                         <div>
                             <h4 class="font-medium mb-2">Assign To</h4>
-                            <select @change="assignTicket($event.target.value)"
-                                class="w-full p-2 border border-gray-300 rounded" :value="currentTicket?.assigned_to">
-                                <option value="">-- Unassigned --</option>
+                            <select x-model="currentTicket.assigned_to" @change="assignTicket($event.target.value)"
+                                class="w-full p-2 border border-gray-300 rounded">
+                                <option value="" :selected="!currentTicket?.assigned_to">-- Unassigned --</option>
                                 <template x-for="user in assignableUsers" :key="user.id">
-                                    <option :value="user.id" x-text="user.name"></option>
+                                    <option :value="user.id" :selected="user.id === currentTicket?.assigned_to"
+                                        x-text="user.name"></option>
                                 </template>
                             </select>
                         </div>
