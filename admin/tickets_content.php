@@ -358,6 +358,22 @@ $pastDueCount = count(array_filter($tickets, function ($ticket) {
                         const data = JSON.parse(text);
                         if (data.success) {
                             this.currentTicket = data.ticket;
+                            console.log(data.ticket)
+                            if (this.currentTicket.assigned_to || !this.currentTicket.assigned_to_name || assigned_to_name == "Unassigned") {
+                                if (this.staffMembers && this.staffMembers.length > 0) {
+                                    const assignedStaff = this.staffMembers.find(staff => staff.id == this.currentTicket.assigned_to);
+                                    this.currentTicket.assigned_to_name = assignedStaff ? assignedStaff.name : 'Unassigned';
+                                } else {
+                                    this.currentTicket.assigned_to_name = 'Staff ID: ' + this.currentTicket.assigned_to;
+
+                                    this.loadStaffMembers().then(() => {
+                                        const assignedStaff = this.staffMembers.find(staff => staff.id == this.currentTicket.assigned_to);
+                                        this.currentTicket.assigned_to_name = assignedStaff ? assignedStaff.name : 'Unassigned';
+                                    });
+                                }
+                            } else if (!this.currentTicket.assigned_to) {
+                                this.currentTicket.assigned_to_name = 'Unassigned';
+                            }
                         } else {
                             alert('Error loading ticket details: ' + data.error);
                         }
@@ -368,6 +384,20 @@ $pastDueCount = count(array_filter($tickets, function ($ticket) {
                 } catch (error) {
                     console.error('Failed to load ticket details:', error);
                     alert('Failed to load ticket details. Please try again.');
+                }
+            },
+
+            async loadStaffMembers() {
+                if (!this.staffMembers || this.staffMembers.length === 0) {
+                    try {
+                        const response = await fetch('ajax/ajax_handlers.php?action=get_staff_members');
+                        const data = await response.json();
+                        if (data.success) {
+                            this.staffMembers = data.staff_members;
+                        }
+                    } catch (error) {
+                        console.error('Failed to load staff members:', error);
+                    }
                 }
             },
 
@@ -1089,7 +1119,6 @@ $pastDueCount = count(array_filter($tickets, function ($ticket) {
 
                         // Map assigned_to IDs to actual names
                         this.tickets = data.tickets.map(ticket => {
-                            // If ticket has assigned_to ID but no name
                             if (ticket.assigned_to && (!ticket.assigned_to_name || ticket.assigned_to_name === '')) {
                                 const staffMember = this.staffMembers.find(staff => staff.id == ticket.assigned_to);
                                 ticket.assigned_to_name = staffMember ? staffMember.name : 'Unassigned';
@@ -2333,7 +2362,6 @@ $pastDueCount = count(array_filter($tickets, function ($ticket) {
                             </select>
                         </div>
 
-                        <!-- Assign Ticket -->
                         <div>
                             <h4 class="font-medium mb-2">Assign To</h4>
                             <select @change="assignTicket($event.target.value)"

@@ -130,24 +130,6 @@ function getAllSubcategories()
     return $subcategories;
 }
 
-function getSubcategoriesByCategoryId($category_id)
-{
-    global $conn;
-
-    $category_id = (int) $category_id;
-    $sql = "SELECT * FROM subcategories WHERE category_id = $category_id ORDER BY id ASC";
-    $result = mysqli_query($conn, $sql);
-
-    $subcategories = [];
-    if ($result && mysqli_num_rows($result) > 0) {
-        while ($row = mysqli_fetch_assoc($result)) {
-            $subcategories[] = $row;
-        }
-    }
-
-    return $subcategories;
-}
-
 
 if ($_SERVER["REQUEST_METHOD"] == "POST") {
     if (isset($_POST['category_action'])) {
