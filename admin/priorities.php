@@ -1,7 +1,7 @@
 <?php
 require_once '../includes/config.php';
 
-function addPriority($name, $level)
+function addPriority($name, $level, $staff_id = null)
 {
     $db = db_connect();
     
@@ -9,17 +9,31 @@ function addPriority($name, $level)
         error_log("Failed to connect to the database");
         return false;
     }
-
+    $staff_id = $_SESSION['user_id'];
     $name = $db->real_escape_string($name);
     $level = (int) $level;
 
     $sql = "INSERT INTO priorities (name, level, created_at, updated_at) 
             VALUES ('$name', $level, current_timestamp(), current_timestamp())";
 
-    return $db->query($sql);
+    $result = $db->query($sql);
+    
+    if ($result) {
+        $priority_id = $db->insert_id;
+        
+        // Log the addition
+        $log_sql = "INSERT INTO entity_logs (entity_type, entity_id, action, old_value, new_value, staff_id, created_at) 
+                    VALUES ('priority', $priority_id, 'add', NULL, 
+                    'name: $name, level: $level', 
+                    " . ($staff_id !== null ? (int)$staff_id : "NULL") . ", 
+                    current_timestamp())";
+        $db->query($log_sql);
+    }
+
+    return $result;
 }
 
-function updatePriority($id, $name, $level)
+function updatePriority($id, $name, $level, $staff_id = null)
 {
     $db = db_connect();
     
@@ -28,19 +42,39 @@ function updatePriority($id, $name, $level)
         return false;
     }
 
+    $staff_id = $_SESSION['user_id'];
     $id = (int) $id;
     $name = $db->real_escape_string($name);
     $level = (int) $level;
 
+    // Get current values for logging
+    $get_current = "SELECT name, level FROM priorities WHERE id = $id";
+    $current_result = $db->query($get_current);
+    $old_data = $current_result->fetch_assoc();
+    
     $sql = "UPDATE priorities 
             SET name = '$name', level = $level, updated_at = current_timestamp() 
             WHERE id = $id";
 
-    return $db->query($sql);
+    $result = $db->query($sql);
+    
+    if ($result) {
+        // Log the update
+        $old_value = 'name: ' . $old_data['name'] . ', level: ' . $old_data['level'];
+        $new_value = 'name: ' . $name . ', level: ' . $level;
+        
+        $log_sql = "INSERT INTO entity_logs (entity_type, entity_id, action, old_value, new_value, staff_id, created_at) 
+                    VALUES ('priority', $id, 'update', '$old_value', '$new_value', 
+                    " . ($staff_id !== null ? (int)$staff_id : "NULL") . ", 
+                    current_timestamp())";
+        $db->query($log_sql);
+    }
+
+    return $result;
 }
 
 // Function to delete a priority
-function deletePriority($id)
+function deletePriority($id, $staff_id = null)
 {
     $db = db_connect();
     
@@ -50,11 +84,27 @@ function deletePriority($id)
     }
 
     $id = (int) $id;
+    
+    $staff_id = $_SESSION['user_id'];
+    $get_current = "SELECT name, level FROM priorities WHERE id = $id";
+    $current_result = $db->query($get_current);
+    $old_data = $current_result->fetch_assoc();
+    
     $sql = "DELETE FROM priorities WHERE id = $id";
+    $result = $db->query($sql);
+    
+    if ($result) {
+        $old_value = 'name: ' . $old_data['name'] . ', level: ' . $old_data['level'];
+        
+        $log_sql = "INSERT INTO entity_logs (entity_type, entity_id, action, old_value, new_value, staff_id, created_at) 
+                    VALUES ('priority', $id, 'delete', '$old_value', NULL, 
+                    " . ($staff_id !== null ? (int)$staff_id : "NULL") . ", 
+                    current_timestamp())";
+        $db->query($log_sql);
+    }
 
-    return $db->query($sql);
+    return $result;
 }
-
 
 if ($_SERVER["REQUEST_METHOD"] == "POST" && isset($_POST['priority_action'])) {
     if ($_POST['priority_action'] == 'add') {
@@ -66,6 +116,7 @@ if ($_SERVER["REQUEST_METHOD"] == "POST" && isset($_POST['priority_action'])) {
         if (!empty($name) && $level >= 0) {
             if (addPriority($name, $level)) {
                 $success_msg = "Priority added successfully!";
+                header("Location: dashboard.php?view=priorities");
             } else {
                 $error_msg = "Error adding priority: " . mysqli_error($conn);
             }
@@ -80,6 +131,7 @@ if ($_SERVER["REQUEST_METHOD"] == "POST" && isset($_POST['priority_action'])) {
 
         if (updatePriority($priority_id, $name, $level)) {
             $success_msg = "Priority updated successfully!";
+            header("Location: dashboard.php?view=priorities");
         } else {
             $error_msg = "Error updating priority: " . mysqli_error($conn);
         }
@@ -89,6 +141,7 @@ if ($_SERVER["REQUEST_METHOD"] == "POST" && isset($_POST['priority_action'])) {
 
         if (deletePriority($priority_id)) {
             $success_msg = "Priority deleted successfully!";
+            header("Location: dashboard.php?view=priorities");
         } else {
             $error_msg = "Error deleting priority: " . mysqli_error($conn);
         }

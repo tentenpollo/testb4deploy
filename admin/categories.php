@@ -1,9 +1,10 @@
 <?php
 require_once '../includes/config.php';
 $conn = db_connect();
-function addCategory($name, $description)
+function addCategory($name, $description, $staff_id = null)
 {
     global $conn;
+    $staff_id = $_SESSION['user_id'];
 
     $name = mysqli_real_escape_string($conn, $name);
     $description = mysqli_real_escape_string($conn, $description);
@@ -11,33 +12,65 @@ function addCategory($name, $description)
     $sql = "INSERT INTO categories (name, description, created_at, updated_at) 
             VALUES ('$name', '$description', current_timestamp(), current_timestamp())";
 
-    return mysqli_query($conn, $sql);
+    $result = mysqli_query($conn, $sql);
+
+    if ($result) {
+        $category_id = mysqli_insert_id($conn);
+
+        // Log the addition
+        $log_sql = "INSERT INTO entity_logs (entity_type, entity_id, action, old_value, new_value, staff_id, created_at) 
+                    VALUES ('category', $category_id, 'add', NULL, 
+                    'name: $name, description: $description', 
+                    " . ($staff_id !== null ? (int) $staff_id : "NULL") . ", 
+                    current_timestamp())";
+        mysqli_query($conn, $log_sql);
+    }
+
+    return $result;
 }
 
 
-function updateCategory($id, $name, $description)
+function updateCategory($id, $name, $description, $staff_id = null)
 {
     global $conn;
 
     $id = (int) $id;
     $name = mysqli_real_escape_string($conn, $name);
     $description = mysqli_real_escape_string($conn, $description);
+    $staff_id = $_SESSION['user_id'];
+
+    $get_current = "SELECT name, description FROM categories WHERE id = $id";
+    $current_result = mysqli_query($conn, $get_current);
+    $old_data = mysqli_fetch_assoc($current_result);
 
     $sql = "UPDATE categories 
             SET name = '$name', description = '$description', updated_at = current_timestamp() 
             WHERE id = $id";
 
-    return mysqli_query($conn, $sql);
+    $result = mysqli_query($conn, $sql);
+
+    if ($result) {
+        // Log the update
+        $old_value = 'name: ' . $old_data['name'] . ', description: ' . $old_data['description'];
+        $new_value = 'name: ' . $name . ', description: ' . $description;
+
+        $log_sql = "INSERT INTO entity_logs (entity_type, entity_id, action, old_value, new_value, staff_id, created_at) 
+                    VALUES ('category', $id, 'update', '$old_value', '$new_value', 
+                    " . ($staff_id !== null ? (int) $staff_id : "NULL") . ", 
+                    current_timestamp())";
+        mysqli_query($conn, $log_sql);
+    }
+
+    return $result;
 }
 
 
-function deleteCategory($id)
+function deleteCategory($id, $staff_id = null)
 {
     global $conn;
 
     $id = (int) $id;
-
-
+    $staff_id = $_SESSION['user_id'];
     $check_sql = "SELECT COUNT(*) as count FROM subcategories WHERE category_id = $id";
     $result = mysqli_query($conn, $check_sql);
     $row = mysqli_fetch_assoc($result);
@@ -46,15 +79,33 @@ function deleteCategory($id)
         return false;
     }
 
+    // Get current values for logging
+    $get_current = "SELECT name, description FROM categories WHERE id = $id";
+    $current_result = mysqli_query($conn, $get_current);
+    $old_data = mysqli_fetch_assoc($current_result);
+
     $sql = "DELETE FROM categories WHERE id = $id";
-    return mysqli_query($conn, $sql);
+    $result = mysqli_query($conn, $sql);
+
+    if ($result) {
+        // Log the deletion
+        $old_value = 'name: ' . $old_data['name'] . ', description: ' . $old_data['description'];
+
+        $log_sql = "INSERT INTO entity_logs (entity_type, entity_id, action, old_value, new_value, staff_id, created_at) 
+                    VALUES ('category', $id, 'delete', '$old_value', NULL, 
+                    " . ($staff_id !== null ? (int) $staff_id : "NULL") . ", 
+                    current_timestamp())";
+        mysqli_query($conn, $log_sql);
+    }
+
+    return $result;
 }
 
 
-function addSubcategory($name, $description, $category_id)
+function addSubcategory($name, $description, $category_id, $staff_id = null)
 {
     global $conn;
-
+    $staff_id = $_SESSION['user_id'];
     $name = mysqli_real_escape_string($conn, $name);
     $description = mysqli_real_escape_string($conn, $description);
     $category_id = (int) $category_id;
@@ -62,35 +113,88 @@ function addSubcategory($name, $description, $category_id)
     $sql = "INSERT INTO subcategories (name, description, category_id, created_at, updated_at) 
             VALUES ('$name', '$description', $category_id, current_timestamp(), current_timestamp())";
 
-    return mysqli_query($conn, $sql);
+    $result = mysqli_query($conn, $sql);
+
+    if ($result) {
+        $subcategory_id = mysqli_insert_id($conn);
+
+        // Log the addition
+        $log_sql = "INSERT INTO entity_logs (entity_type, entity_id, action, old_value, new_value, staff_id, created_at) 
+                    VALUES ('subcategory', $subcategory_id, 'add', NULL, 
+                    'name: $name, description: $description, category_id: $category_id', 
+                    " . ($staff_id !== null ? (int) $staff_id : "NULL") . ", 
+                    current_timestamp())";
+        mysqli_query($conn, $log_sql);
+    }
+
+    return $result;
 }
 
 
-function updateSubcategory($id, $name, $description, $category_id)
+function updateSubcategory($id, $name, $description, $category_id, $staff_id = null)
 {
     global $conn;
-
+    $staff_id = $_SESSION['user_id'];
     $id = (int) $id;
     $name = mysqli_real_escape_string($conn, $name);
     $description = mysqli_real_escape_string($conn, $description);
     $category_id = (int) $category_id;
 
+    // Get current values for logging
+    $get_current = "SELECT name, description, category_id FROM subcategories WHERE id = $id";
+    $current_result = mysqli_query($conn, $get_current);
+    $old_data = mysqli_fetch_assoc($current_result);
+
     $sql = "UPDATE subcategories 
             SET name = '$name', description = '$description', category_id = $category_id, updated_at = current_timestamp() 
             WHERE id = $id";
 
-    return mysqli_query($conn, $sql);
+    $result = mysqli_query($conn, $sql);
+
+    if ($result) {
+        // Log the update
+        $old_value = 'name: ' . $old_data['name'] . ', description: ' . $old_data['description'] .
+            ', category_id: ' . $old_data['category_id'];
+        $new_value = 'name: ' . $name . ', description: ' . $description . ', category_id: ' . $category_id;
+
+        $log_sql = "INSERT INTO entity_logs (entity_type, entity_id, action, old_value, new_value, staff_id, created_at) 
+                    VALUES ('subcategory', $id, 'update', '$old_value', '$new_value', 
+                    " . ($staff_id !== null ? (int) $staff_id : "NULL") . ", 
+                    current_timestamp())";
+        mysqli_query($conn, $log_sql);
+    }
+
+    return $result;
 }
 
 
-function deleteSubcategory($id)
+function deleteSubcategory($id, $staff_id = null)
 {
     global $conn;
 
     $id = (int) $id;
-    $sql = "DELETE FROM subcategories WHERE id = $id";
 
-    return mysqli_query($conn, $sql);
+    $staff_id = $_SESSION['user_id'];
+    $get_current = "SELECT name, description, category_id FROM subcategories WHERE id = $id";
+    $current_result = mysqli_query($conn, $get_current);
+    $old_data = mysqli_fetch_assoc($current_result);
+
+    $sql = "DELETE FROM subcategories WHERE id = $id";
+    $result = mysqli_query($conn, $sql);
+
+    if ($result) {
+        // Log the deletion
+        $old_value = 'name: ' . $old_data['name'] . ', description: ' . $old_data['description'] .
+            ', category_id: ' . $old_data['category_id'];
+
+        $log_sql = "INSERT INTO entity_logs (entity_type, entity_id, action, old_value, new_value, staff_id, created_at) 
+                    VALUES ('subcategory', $id, 'delete', '$old_value', NULL, 
+                    " . ($staff_id !== null ? (int) $staff_id : "NULL") . ", 
+                    current_timestamp())";
+        mysqli_query($conn, $log_sql);
+    }
+
+    return $result;
 }
 
 function getAllCategories1()
@@ -132,13 +236,16 @@ function getAllSubcategories()
 
 
 if ($_SERVER["REQUEST_METHOD"] == "POST") {
+    // Get staff_id from session if available
+    $staff_id = isset($_SESSION['staff_id']) ? $_SESSION['staff_id'] : null;
+
     if (isset($_POST['category_action'])) {
         if ($_POST['category_action'] == 'add') {
             $name = trim($_POST['name']);
             $description = trim($_POST['description']);
 
             if (!empty($name)) {
-                if (addCategory($name, $description)) {
+                if (addCategory($name, $description, $staff_id)) {
                     $_SESSION['success_msg'] = "Category added successfully!";
                     header("Location: dashboard.php?view=categories");
                     exit();
@@ -153,7 +260,7 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
             $name = trim($_POST['name']);
             $description = trim($_POST['description']);
 
-            if (updateCategory($category_id, $name, $description)) {
+            if (updateCategory($category_id, $name, $description, $staff_id)) {
                 $_SESSION['success_msg'] = "Category updated successfully!";
                 header("Location: dashboard.php?view=categories");
                 exit();
@@ -163,7 +270,7 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
         } elseif ($_POST['category_action'] == 'delete' && isset($_POST['category_id'])) {
             $category_id = (int) $_POST['category_id'];
 
-            if (deleteCategory($category_id)) {
+            if (deleteCategory($category_id, $staff_id)) {
                 $_SESSION['success_msg'] = "Category deleted successfully!";
                 header("Location: dashboard.php?view=categories");
                 exit();
@@ -180,7 +287,7 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
             $category_id = (int) $_POST['category_id'];
 
             if (!empty($name) && $category_id > 0) {
-                if (addSubcategory($name, $description, $category_id)) {
+                if (addSubcategory($name, $description, $category_id, $staff_id)) {
                     $_SESSION['success_msg'] = "Subcategory added successfully!";
                     header("Location: dashboard.php?view=categories");
                     exit();
@@ -196,7 +303,7 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
             $description = trim($_POST['description']);
             $category_id = (int) $_POST['category_id'];
 
-            if (updateSubcategory($subcategory_id, $name, $description, $category_id)) {
+            if (updateSubcategory($subcategory_id, $name, $description, $category_id, $staff_id)) {
                 $_SESSION['success_msg'] = "Subcategory updated successfully!";
                 header("Location: dashboard.php?view=categories");
                 exit();
@@ -206,7 +313,7 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
         } elseif ($_POST['subcategory_action'] == 'delete' && isset($_POST['subcategory_id'])) {
             $subcategory_id = (int) $_POST['subcategory_id'];
 
-            if (deleteSubcategory($subcategory_id)) {
+            if (deleteSubcategory($subcategory_id, $staff_id)) {
                 $_SESSION['success_msg'] = "Subcategory deleted successfully!";
                 header("Location: dashboard.php?view=categories");
                 exit();
@@ -216,7 +323,32 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
         }
     }
 }
+// Use session for flash messages
+if (!isset($_SESSION)) {
+    session_start();
+}
 
+// Store messages in session
+if (isset($success_msg)) {
+    $_SESSION['success_msg'] = $success_msg;
+}
+
+if (isset($error_msg)) {
+    $_SESSION['error_msg'] = $error_msg;
+}
+
+// Get messages from session
+$success_msg = isset($_SESSION['success_msg']) ? $_SESSION['success_msg'] : null;
+$error_msg = isset($_SESSION['error_msg']) ? $_SESSION['error_msg'] : null;
+
+// Clear messages after displaying them
+if (isset($_SESSION['success_msg'])) {
+    unset($_SESSION['success_msg']);
+}
+
+if (isset($_SESSION['error_msg'])) {
+    unset($_SESSION['error_msg']);
+}
 $categories = getAllCategories1();
 $subcategories = getAllSubcategories();
 ?>
@@ -366,13 +498,17 @@ $subcategories = getAllSubcategories();
                                                     <?php if ($subcategory['category_id'] == $category['id']): ?>
                                                         <tr>
                                                             <td class="px-4 py-2 whitespace-nowrap text-sm text-gray-500">
-                                                                <?php echo $subcategory['id']; ?></td>
+                                                                <?php echo $subcategory['id']; ?>
+                                                            </td>
                                                             <td class="px-4 py-2 whitespace-nowrap text-sm font-medium text-gray-900">
-                                                                <?php echo htmlspecialchars($subcategory['name']); ?></td>
+                                                                <?php echo htmlspecialchars($subcategory['name']); ?>
+                                                            </td>
                                                             <td class="px-4 py-2 text-sm text-gray-500">
-                                                                <?php echo htmlspecialchars($subcategory['description']); ?></td>
+                                                                <?php echo htmlspecialchars($subcategory['description']); ?>
+                                                            </td>
                                                             <td class="px-4 py-2 whitespace-nowrap text-sm text-gray-500">
-                                                                <?php echo $subcategory['created_at']; ?></td>
+                                                                <?php echo $subcategory['created_at']; ?>
+                                                            </td>
                                                             <td class="px-4 py-2 whitespace-nowrap text-sm font-medium">
                                                                 <div class="flex space-x-2">
                                                                     <button
