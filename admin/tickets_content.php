@@ -6,7 +6,13 @@ $tickets = getAllTickets();
 $priorities = getAllPriorities();
 $categories = getAllCategories();
 $assignable_users = getAssignableUsers();
-
+if (!empty($_SESSION)) {
+    foreach ($_SESSION as $key => $value) {
+        echo "Key: $key, Value: $value<br>";
+    }
+} else {
+    echo "No session variables found.";
+}
 $isAdmin = isset($_SESSION['staff_role']) && $_SESSION['staff_role'] === 'admin';
 
 $myTicketsCount = count(array_filter($tickets, function ($ticket) {
@@ -59,6 +65,10 @@ $pastDueCount = count(array_filter($tickets, function ($ticket) {
         allTickets: <?php echo $allTicketsCount; ?>
     };
     window.sharedViewCounts = window.ticketCounts;
+    
+    function basename(path) {
+        return path.split('/').pop().split('\\').pop();
+    }
 
     function ticketDetailsModal() {
         return {
@@ -73,6 +83,7 @@ $pastDueCount = count(array_filter($tickets, function ($ticket) {
             editor: null,
             activeTab: 'user',
             isGuestUser: false,
+            pendingAttachments: [],
 
             openTicketDetailsModal(ticketId) {
                 window.dispatchEvent(new CustomEvent('open-ticket-modal', {
@@ -102,20 +113,17 @@ $pastDueCount = count(array_filter($tickets, function ($ticket) {
             },
 
             downloadAttachment(attachment) {
-                const fullPath = attachment.file_path;
-                const filename = fullPath.split(/[\/\\]/).pop();
+                // Use the exact filename as stored in the system
+                const filename = attachment.filename || attachment.name || basename(attachment.file_path);
 
-                const downloadUrl = `ajax/ajax_handlers.php?action=download_attachment&ticket_id=${this.currentTicket.id}&filename=${encodeURIComponent(filename)}`;
+                // Check if this is a comment attachment (add comment_id parameter if it exists)
+                const commentParam = attachment.comment_id ? `&comment_id=${attachment.comment_id}` : '';
 
-                const iframe = document.createElement('iframe');
-                iframe.style.display = 'none';
-                iframe.src = downloadUrl;
-                document.body.appendChild(iframe);
+                // Properly encode the filename to handle spaces and special characters
+                const downloadUrl = `ajax/ajax_handlers.php?action=download_attachment&ticket_id=${this.currentTicket.id}${commentParam}&filename=${encodeURIComponent(filename)}`;
 
-                // Clean up after a delay
-                setTimeout(() => {
-                    document.body.removeChild(iframe);
-                }, 5000);
+                // Use a direct download approach
+                window.location.href = downloadUrl;
 
                 console.log(`Attempting to download: ${filename} via ${downloadUrl}`);
             },
@@ -328,6 +336,51 @@ $pastDueCount = count(array_filter($tickets, function ($ticket) {
                 this.ticketHistory = [];
                 this.attachments = [];
                 document.body.classList.remove('overflow-hidden');
+            },
+
+            // Cancel a pending attachment
+            cancelPendingAttachment(index) {
+                this.pendingAttachments.splice(index, 1);
+            },
+
+            // Confirm and upload a pending attachment
+            async confirmAttachment(index) {
+                const pending = this.pendingAttachments[index];
+                if (!pending || !pending.file) return;
+
+                try {
+                    const formData = new FormData();
+                    formData.append('attachment', pending.file);
+                    formData.append('ticket_id', this.currentTicket.id);
+
+                    // Show a loading indicator
+                    this.pendingAttachments[index].uploading = true;
+
+                    const response = await fetch('ajax/ajax_handlers.php?action=upload_attachment', {
+                        method: 'POST',
+                        body: formData
+                    });
+
+                    const data = await response.json();
+
+                    if (data.success) {
+                        // Remove from pending
+                        this.pendingAttachments.splice(index, 1);
+                        // Reload ticket attachments and history
+                        await this.loadTicketAttachments(this.currentTicket.id);
+                        await this.loadTicketHistory(this.currentTicket.id);
+                        this.showNotification('Attachment uploaded successfully', 'success');
+                    } else {
+                        this.showNotification('Error uploading attachment: ' + data.error, 'error');
+                        // Remove uploading flag
+                        this.pendingAttachments[index].uploading = false;
+                    }
+                } catch (error) {
+                    console.error('Failed to upload attachment:', error);
+                    this.showNotification('Failed to upload attachment. Please try again.', 'error');
+                    // Remove uploading flag
+                    this.pendingAttachments[index].uploading = false;
+                }
             },
 
             async loadTicketAttachments(ticketId) {
@@ -545,6 +598,27 @@ $pastDueCount = count(array_filter($tickets, function ($ticket) {
                 }
             },
 
+            async addCommentAttachment() {
+                const fileInput = document.createElement('input');
+                fileInput.type = 'file';
+                fileInput.multiple = false;
+
+                fileInput.onchange = async (e) => {
+                    if (e.target.files.length === 0) return;
+
+                    const file = e.target.files[0];
+
+                    this.commentAttachments.push({
+                        name: file.name,
+                        size: file.size,
+                        file: file,
+                        id: 'comment-' + Date.now()
+                    });
+                };
+
+                fileInput.click();
+            },
+
             async addComment(isPrivate = false) {
                 if (!this.currentTicket || !this.editor) return;
 
@@ -556,7 +630,6 @@ $pastDueCount = count(array_filter($tickets, function ($ticket) {
                 }
 
                 try {
-                    // Show loading indicator
                     this.isSubmitting = true;
 
                     const formData = new FormData();
@@ -564,7 +637,7 @@ $pastDueCount = count(array_filter($tickets, function ($ticket) {
                     formData.append('content', commentContent);
                     formData.append('is_private', isPrivate ? 1 : 0);
 
-                    // Add any uploaded attachments
+                    // Add any uploaded attachments from commentAttachments array only
                     if (this.commentAttachments && this.commentAttachments.length > 0) {
                         this.commentAttachments.forEach((attachment, index) => {
                             if (attachment.file) {
@@ -675,24 +748,19 @@ $pastDueCount = count(array_filter($tickets, function ($ticket) {
                 fileInput.type = 'file';
                 fileInput.multiple = false;
 
-                // Handle file selection
                 fileInput.onchange = async (e) => {
                     if (e.target.files.length === 0) return;
 
                     const file = e.target.files[0];
 
-                    this.commentAttachments.push({
+                    this.pendingAttachments.push({
                         name: file.name,
                         size: file.size,
-                        file: file
+                        file: file,
+                        id: 'pending-' + Date.now()
                     });
-
-                    if (this.currentTicket) {
-                        await this.uploadAttachment(file);
-                    }
                 };
 
-                // Trigger the file selection dialog
                 fileInput.click();
             },
 
@@ -2255,12 +2323,33 @@ $pastDueCount = count(array_filter($tickets, function ($ticket) {
                                                 <!-- Comment text -->
                                                 <div class="text-sm email-content break-words"
                                                     x-html="activity.content"></div>
+
+                                                <!-- Attachments section -->
+                                                <div x-show="activity.attachments && activity.attachments.length > 0"
+                                                    class="mt-3 pt-2 border-t border-gray-200">
+                                                    <p class="text-xs font-medium text-gray-500 mb-1">Attachments:</p>
+                                                    <div class="flex flex-wrap gap-2">
+                                                        <template x-for="(file, fileIndex) in activity.attachments"
+                                                            :key="fileIndex">
+                                                            <div
+                                                                class="flex items-center bg-gray-100 rounded px-2 py-1 text-xs">
+                                                                <i class="fas fa-paperclip mr-1 text-gray-500"></i>
+                                                                <span x-text="file.filename || file.name"
+                                                                    class="mr-1 truncate max-w-[120px]"></span>
+                                                                <button @click="downloadAttachment(file)"
+                                                                    class="text-blue-500 hover:text-blue-700"
+                                                                    title="Download">
+                                                                    <i class="fas fa-download"></i>
+                                                                </button>
+                                                            </div>
+                                                        </template>
+                                                    </div>
+                                                </div>
                                             </div>
                                         </div>
                                     </div>
                                 </template>
 
-                                <!-- Empty state -->
                                 <div x-show="filteredTicketHistory.length === 0"
                                     class="flex flex-col items-center justify-center h-full text-gray-500">
                                     <i class="fas fa-comments text-4xl mb-2"></i>
@@ -2296,9 +2385,8 @@ $pastDueCount = count(array_filter($tickets, function ($ticket) {
                             </div>
                         </div>
 
-                        <!-- Attachment Button and Submit Buttons -->
                         <div class="mt-4 flex flex-wrap gap-3 justify-between items-center">
-                            <button @click="addAttachment()"
+                            <button @click="addCommentAttachment()"
                                 class="flex items-center px-3 py-2 border border-gray-300 rounded hover:bg-gray-50">
                                 <i class="fas fa-paperclip mr-2"></i>
                                 <span>Add Attachment</span>
@@ -2386,6 +2474,7 @@ $pastDueCount = count(array_filter($tickets, function ($ticket) {
 
                         <!-- In the Ticket Attachments section -->
                         <div class="space-y-2">
+                            <!-- Existing attachments -->
                             <template x-for="(attachment, index) in attachments" :key="index">
                                 <div
                                     class="p-2 bg-gray-50 rounded border border-gray-200 flex items-center justify-between">
@@ -2407,7 +2496,31 @@ $pastDueCount = count(array_filter($tickets, function ($ticket) {
                                     </div>
                                 </div>
                             </template>
-                            <div x-show="attachments.length === 0" class="text-gray-500 text-sm text-center py-2">
+
+                            <!-- Pending attachments -->
+                            <template x-for="(attachment, index) in pendingAttachments" :key="attachment.id">
+                                <div
+                                    class="p-2 bg-yellow-50 rounded border border-yellow-200 flex items-center justify-between">
+                                    <div class="flex items-center overflow-hidden">
+                                        <i class="fas fa-paperclip mr-2 text-yellow-500"></i>
+                                        <span class="text-sm truncate" x-text="attachment.name"></span>
+                                        <span class="ml-2 text-xs text-yellow-600">(Pending)</span>
+                                    </div>
+                                    <div class="flex items-center">
+                                        <button @click="confirmAttachment(index)"
+                                            class="ml-2 text-green-500 hover:text-green-700 p-1" title="Confirm upload">
+                                            <i class="fas fa-check"></i>
+                                        </button>
+                                        <button @click="cancelPendingAttachment(index)"
+                                            class="ml-1 text-red-500 hover:text-red-700 p-1" title="Cancel upload">
+                                            <i class="fas fa-times"></i>
+                                        </button>
+                                    </div>
+                                </div>
+                            </template>
+
+                            <div x-show="attachments.length === 0 && pendingAttachments.length === 0"
+                                class="text-gray-500 text-sm text-center py-2">
                                 No attachments
                             </div>
                         </div>

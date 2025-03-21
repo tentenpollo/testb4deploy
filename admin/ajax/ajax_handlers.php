@@ -203,27 +203,45 @@ if (isset($_GET['action'])) {
                 $is_private = isset($_POST['is_private']) ? (bool) $_POST['is_private'] : false;
                 $user_id = $_SESSION['user_id'];
 
+                $user_type = 'user';
+
+                if (isset($_SESSION['is_staff'])) {
+                    $user_type = 'staff';
+                    $user_id = $_SESSION['user_id'];
+                } elseif (isset($_SESSION['guest_email'])) {
+                    $user_type = 'guest';
+                    $user_id = $_SESSION['guest_email']; // Use email as identifier
+                }
+
+                // Additional admin check
+                $isAdmin = isset($_SESSION['staff_role']) && $_SESSION['staff_role'] === 'admin';
+
                 // Process any attachments
                 $attachments = [];
                 if (isset($_FILES['attachments'])) {
                     // If multiple files were uploaded
                     if (is_array($_FILES['attachments']['name'])) {
                         for ($i = 0; $i < count($_FILES['attachments']['name']); $i++) {
-                            $attachments[] = [
-                                'name' => $_FILES['attachments']['name'][$i],
-                                'type' => $_FILES['attachments']['type'][$i],
-                                'tmp_name' => $_FILES['attachments']['tmp_name'][$i],
-                                'error' => $_FILES['attachments']['error'][$i],
-                                'size' => $_FILES['attachments']['size'][$i]
-                            ];
+                            if ($_FILES['attachments']['name'][$i] !== '' && $_FILES['attachments']['error'][$i] === UPLOAD_ERR_OK) {
+                                $attachments[] = [
+                                    'name' => $_FILES['attachments']['name'][$i],
+                                    'type' => $_FILES['attachments']['type'][$i],
+                                    'tmp_name' => $_FILES['attachments']['tmp_name'][$i],
+                                    'error' => $_FILES['attachments']['error'][$i],
+                                    'size' => $_FILES['attachments']['size'][$i]
+                                ];
+                            }
                         }
                     } else {
                         // Single file upload
-                        $attachments[] = $_FILES['attachments'];
+                        if ($_FILES['attachments']['name'] !== '' && $_FILES['attachments']['error'] === UPLOAD_ERR_OK) {
+                            $attachments[] = $_FILES['attachments'];
+                        }
                     }
                 }
 
-                $result = add_ticket_comment($ticket_id, $user_id, $content, $is_private, $attachments);
+                // Call the modified function with updated parameter order
+                $result = add_ticket_comment($ticket_id, $user_id, $content, $attachments, $user_type, $is_private);
 
                 if ($result) {
                     echo json_encode(['success' => true, 'comment_id' => $result]);
@@ -269,15 +287,53 @@ if (isset($_GET['action'])) {
                 $ticket_id = $_GET['ticket_id'];
                 $filename = $_GET['filename'];
 
-                // Validate that this file belongs to this ticket (security check)
+                // For debugging
+                error_log("Requested filename: " . $filename);
+
                 $ticket_attachments = get_ticket_attachments($ticket_id);
                 $valid_attachment = false;
+                $file_path = '';
+
+                // Check if the comment_id parameter exists
+                $comment_id = isset($_GET['comment_id']) ? $_GET['comment_id'] : null;
 
                 foreach ($ticket_attachments as $attachment) {
+                    // Log each attachment filename for debugging
+                    error_log("Checking attachment: " . basename($attachment['file_path']));
+
+                    // Try exact match first
                     if (basename($attachment['file_path']) === $filename) {
-                        $valid_attachment = true;
-                        $file_path = $attachment['file_path'];
-                        break;
+                        if ($comment_id === null || (isset($attachment['comment_id']) && $attachment['comment_id'] == $comment_id)) {
+                            $valid_attachment = true;
+                            $file_path = $attachment['file_path'];
+                            break;
+                        }
+                    }
+
+                    // Try case-insensitive match if exact match fails
+                    // This helps with inconsistent filename casing
+                    if (strcasecmp(basename($attachment['file_path']), $filename) === 0) {
+                        if ($comment_id === null || (isset($attachment['comment_id']) && $attachment['comment_id'] == $comment_id)) {
+                            $valid_attachment = true;
+                            $file_path = $attachment['file_path'];
+                            break;
+                        }
+                    }
+                }
+
+                if (!$valid_attachment && strpos($filename, ' ') !== false) {
+                    // Special handling for filenames with spaces - try with URL decoded version
+                    $decoded_filename = urldecode($filename);
+                    error_log("Trying with decoded filename: " . $decoded_filename);
+
+                    foreach ($ticket_attachments as $attachment) {
+                        if (basename($attachment['file_path']) === $decoded_filename) {
+                            if ($comment_id === null || (isset($attachment['comment_id']) && $attachment['comment_id'] == $comment_id)) {
+                                $valid_attachment = true;
+                                $file_path = $attachment['file_path'];
+                                break;
+                            }
+                        }
                     }
                 }
 
@@ -295,20 +351,42 @@ if (isset($_GET['action'])) {
                         $content_type = 'application/pdf';
                     }
 
+                    // Clean output buffer before sending headers
+                    while (ob_get_level()) {
+                        ob_end_clean();
+                    }
+
+                    // Force download headers
                     header('Content-Description: File Transfer');
                     header('Content-Type: ' . $content_type);
+                    // Use proper filename for Content-Disposition, including handling for spaces
                     header('Content-Disposition: attachment; filename="' . basename($file_path) . '"');
                     header('Expires: 0');
                     header('Cache-Control: must-revalidate');
                     header('Pragma: public');
                     header('Content-Length: ' . filesize($file_path));
-                    // Clear output buffer
-                    ob_clean();
                     flush();
+
                     // Output file
                     readfile($file_path);
                     exit;
                 } else {
+                    // Enhanced error logging for debugging
+                    error_log("Download failed for: " . $filename);
+                    error_log("Valid attachment: " . ($valid_attachment ? 'true' : 'false'));
+                    if ($file_path) {
+                        error_log("File exists: " . (file_exists($file_path) ? 'true' : 'false'));
+                        error_log("File path: " . $file_path);
+                    } else {
+                        error_log("No matching file path found");
+                    }
+
+                    // List all available attachments for debugging
+                    error_log("Available attachments:");
+                    foreach ($ticket_attachments as $attachment) {
+                        error_log("- " . basename($attachment['file_path']));
+                    }
+
                     echo json_encode(['success' => false, 'error' => 'File not found']);
                 }
             } else {

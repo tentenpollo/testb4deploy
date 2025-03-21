@@ -3,33 +3,33 @@
 function log_ticket_history($ticket_id, $user_id, $type, $old_value = null, $new_value = null)
 {
     $db = db_connect();
-    
+
     if (!$db) {
         error_log("Database connection failed in log_ticket_history");
         return false;
     }
-    
+
     // Sanitize inputs
     $ticket_id = $db->real_escape_string($ticket_id);
     $user_id = $db->real_escape_string($user_id);
     $type = $db->real_escape_string($type);
     $old_value = $old_value !== null ? $db->real_escape_string($old_value) : "NULL";
     $new_value = $new_value !== null ? $db->real_escape_string($new_value) : "NULL";
-    
+
     // Set NULL as SQL NULL rather than string 'NULL'
     $old_value_sql = $old_value === "NULL" ? "NULL" : "'$old_value'";
     $new_value_sql = $new_value === "NULL" ? "NULL" : "'$new_value'";
-    
+
     $query = "INSERT INTO ticket_history 
              (ticket_id, staff_id, type, old_value, new_value, created_at)
              VALUES 
              ('$ticket_id', '$user_id', '$type', $old_value_sql, $new_value_sql, NOW())";
-    
+
     if (!$db->query($query)) {
         error_log("Failed to log ticket history: " . $db->error . " - Query: " . $query);
         return false;
     }
-    
+
     return $db->insert_id;
 }
 
@@ -84,6 +84,7 @@ function get_ticket_history($ticket_id)
 
     $ticket_id = $db->real_escape_string($ticket_id);
 
+    // Get comments
     $query = "SELECT h.*, s.name AS user_name 
               FROM ticket_comments h
               LEFT JOIN staff_members s ON h.user_id = s.id
@@ -95,6 +96,23 @@ function get_ticket_history($ticket_id)
     $history = [];
     if ($result && $result->num_rows > 0) {
         while ($row = $result->fetch_assoc()) {
+            // Get attachments for this comment
+            $comment_id = $db->real_escape_string($row['id']);
+            $attachments_query = "SELECT * FROM attachments 
+                                 WHERE ticket_id = '$ticket_id' 
+                                 AND comment_id = '$comment_id'";
+            
+            $attachments_result = $db->query($attachments_query);
+            $attachments = [];
+            
+            if ($attachments_result && $attachments_result->num_rows > 0) {
+                while ($attachment = $attachments_result->fetch_assoc()) {
+                    $attachments[] = $attachment;
+                }
+            }
+            
+            // Add attachments to the comment data
+            $row['attachments'] = $attachments;
             $history[] = $row;
         }
     }
@@ -124,7 +142,7 @@ function get_ticket_attachments($ticket_id)
     return $attachments;
 }
 
-function add_ticket_comment($ticket_id, $user_id, $content, $is_private = false, $attachments = [])
+function add_ticket_comment($ticket_id, $user_id, $content, $attachments = [], $user_type = 'user', $is_private = false)
 {
     $db = db_connect();
 
@@ -140,7 +158,8 @@ function add_ticket_comment($ticket_id, $user_id, $content, $is_private = false,
         $user_id = $db->real_escape_string($user_id);
         $content = $db->real_escape_string($content);
         $is_private = $is_private ? 1 : 0;
-
+        
+        // Insert the comment
         $query = "INSERT INTO ticket_comments (ticket_id, user_id, type, content, is_internal, created_at)
                 VALUES ('$ticket_id', '$user_id', 'comment', '$content', '$is_private', NOW())";
 
@@ -165,21 +184,38 @@ function add_ticket_comment($ticket_id, $user_id, $content, $is_private = false,
                 if ($attachment['error'] === UPLOAD_ERR_OK) {
                     $tmp_name = $attachment['tmp_name'];
                     $name = basename($attachment['name']);
-                    $size = $attachment['size'];
 
                     $file_path = $upload_dir . '/' . time() . '_' . $name;
 
                     if (move_uploaded_file($tmp_name, $file_path)) {
-                        $attachment_name = $db->real_escape_string($name);
-                        $attachment_path = $db->real_escape_string($file_path);
-
-                        $attachment_query = "INSERT INTO attachments (ticket_id, user_id, file_name, file_path, file_size, comment_id, created_at)
-                                            VALUES ('$ticket_id', '$user_id', '$attachment_name', '$attachment_path', '$size', '$comment_id', NOW())";
+                        $filename = $db->real_escape_string($name);
+                        $filepath = $db->real_escape_string($file_path);
+                        
+                        // Determine which field to use based on user type
+                        $attachment_fields = "ticket_id, comment_id, filename, file_path, created_at";
+                        $attachment_values = "'$ticket_id', '$comment_id', '$filename', '$filepath', NOW()";
+                        
+                        switch ($user_type) {
+                            case 'staff':
+                                $attachment_fields .= ", uploaded_by_staff_member_id";
+                                $attachment_values .= ", '$user_id'";
+                                break;
+                            case 'guest':
+                                $attachment_fields .= ", uploaded_by_guest_email";
+                                $attachment_values .= ", '" . $db->real_escape_string($user_id) . "'";
+                                break;
+                            case 'user':
+                            default:
+                                $attachment_fields .= ", uploaded_by_user_id";
+                                $attachment_values .= ", '$user_id'";
+                                break;
+                        }
+                        
+                        $attachment_query = "INSERT INTO attachments ($attachment_fields) VALUES ($attachment_values)";
 
                         if (!$db->query($attachment_query)) {
                             throw new Exception("Failed to insert attachment record: " . $db->error);
                         }
-
                     } else {
                         throw new Exception("Failed to move uploaded file");
                     }
@@ -197,7 +233,6 @@ function add_ticket_comment($ticket_id, $user_id, $content, $is_private = false,
         return false;
     }
 }
-
 function update_ticket_status($ticket_id, $user_id, $new_status)
 {
     $db = db_connect();
