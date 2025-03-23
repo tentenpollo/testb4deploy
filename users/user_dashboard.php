@@ -30,9 +30,10 @@ $user = $stmt->get_result()->fetch_assoc();
 </head>
 
 <body x-data="{ 
+    sidebarOpen: true,
     searchExpanded: false,
     profileMenuOpen: false,
-    activeTab: 'overview',
+    activeTab: 'my-tickets',
     showCreateTicket: false
 }">
     <!-- Top Navigation Bar -->
@@ -86,17 +87,25 @@ $user = $stmt->get_result()->fetch_assoc();
         <?php unset($_SESSION['success']); ?>
     <?php endif; ?>
 
-    <div class="flex min-h-screen pt-16 overflow-x-hidden">
+    <div class="flex h-screen pt-16">
         <!-- Sidebar -->
-        <aside class="navy-bg w-64 h-700">
+        <aside class="navy-bg w-64 min-h-screen" :class="{ 'hidden': !sidebarOpen }">
             <div class="flex flex-col h-full">
-                <div class="flex-1 px-4 py-3 space-y-1">
+                <div class="flex-1 px-4 py-6 space-y-1">
                     <!-- Dashboard -->
                     <button @click="activeTab = 'overview'"
                         :class="{ 'bg-white/10': activeTab === 'overview' }"
                         class="w-full flex items-center space-x-3 px-3 py-2 rounded-lg text-white hover:bg-white/10">
                         <i class="fas fa-home"></i>
                         <span>Overview</span>
+                    </button>
+
+                    <!-- My Tickets -->
+                    <button @click="activeTab = 'my-tickets'"
+                        :class="{ 'bg-white/10': activeTab === 'my-tickets' }"
+                        class="w-full flex items-center space-x-3 px-3 py-2 rounded-lg text-white hover:bg-white/10">
+                        <i class="fas fa-ticket-alt"></i>
+                        <span>My Tickets</span>
                     </button>
 
                     <!-- Create Ticket -->
@@ -107,17 +116,22 @@ $user = $stmt->get_result()->fetch_assoc();
                         <span>Create Ticket</span>
                     </button>
                 </div>
+
+                <!-- Sidebar Footer -->
+                <div class="p-4 border-t border-white/10">
+                    <button @click="sidebarOpen = !sidebarOpen"
+                        class="w-full flex items-center justify-center space-x-3 px-3 py-2 rounded-lg text-white hover:bg-white/10">
+                        <i class="fas" :class="sidebarOpen ? 'fa-arrow-left' : 'fa-arrow-right'"></i>
+                        <span :class="{ 'hidden': !sidebarOpen }">Collapse</span>
+                    </button>
+                </div>
             </div>
         </aside>
 
         <!-- Main Content -->
-        <main class="flex-1 bg-gray-50 p-8" :class="{ 'min-h-screen': true, 'h-auto': activeTab === 'create-ticket' }">
+        <main class="flex-1 bg-gray-50 p-8">
             <!-- Overview Tab -->
-            <div x-show="activeTab === 'overview'" 
-                 x-transition:enter="transition ease-out duration-200"
-                 x-transition:enter-start="opacity-0"
-                 x-transition:enter-end="opacity-100"
-                 class="space-y-6">
+            <div x-show="activeTab === 'overview'" class="space-y-6">
                 <h1 class="text-2xl font-bold text-gray-800">Welcome, <?php echo htmlspecialchars($user['first_name']); ?>!</h1>
                 
                 <!-- Stats Cards -->
@@ -174,144 +188,188 @@ $user = $stmt->get_result()->fetch_assoc();
                     </div>
                 </div>
 
-                <!-- Tickets Section -->
+                <!-- Recent Activity -->
                 <div class="bg-white rounded-lg shadow">
                     <div class="p-6">
-                        <h2 class="text-xl font-semibold mb-4">Tickets</h2>
-                        <div x-data="{ 
-                            currentPage: 1,
-                            itemsPerPage: 10,
-                            totalItems: <?php
-                                $count_query = "SELECT COUNT(*) as count FROM tickets WHERE user_id = ?";
-                                $count_stmt = $mysqli->prepare($count_query);
-                                $count_stmt->bind_param("i", $user_id);
-                                $count_stmt->execute();
-                                echo $count_stmt->get_result()->fetch_assoc()['count'];
-                            ?>
-                        }" class="space-y-4">
+                        <h2 class="text-xl font-semibold mb-4">Recent Activity</h2>
+                        <div class="space-y-4">
                             <?php
-                            // Calculate pagination
-                            $items_per_page = 10;
-                            $page = isset($_GET['page']) ? (int)$_GET['page'] : 1;
-                            $offset = ($page - 1) * $items_per_page;
-
                             $query = "SELECT t.*, c.name as category_name 
-                                    FROM tickets t 
-                                    LEFT JOIN categories c ON t.category_id = c.id 
-                                    WHERE t.user_id = ? 
-                                    ORDER BY t.created_at DESC
-                                    LIMIT ? OFFSET ?";
+                                     FROM tickets t 
+                                     LEFT JOIN categories c ON t.category_id = c.id 
+                                     WHERE t.user_id = ? 
+                                     ORDER BY t.created_at DESC LIMIT 5";
                             $stmt = $mysqli->prepare($query);
-                            $stmt->bind_param("iii", $user_id, $items_per_page, $offset);
+                            $stmt->bind_param("i", $user_id);
                             $stmt->execute();
                             $result = $stmt->get_result();
                             
                             while ($ticket = $result->fetch_assoc()):
                             ?>
-                            <div x-data="{ open: false }" class="border rounded-lg overflow-hidden">
-                                <!-- Ticket Header - Always visible -->
-                                <div @click="open = !open" 
-                                     class="flex items-center justify-between p-4 cursor-pointer hover:bg-gray-50">
-                                    <div class="flex-1">
-                                        <div class="flex items-center justify-between">
-                                            <h3 class="font-semibold"><?php echo htmlspecialchars($ticket['title']); ?></h3>
-                                            <div class="flex items-center space-x-3">
-                                                <span class="px-3 py-1 rounded-full text-sm 
-                                                    <?php echo match($ticket['status']) {
-                                                        'open' => 'bg-blue-100 text-blue-800',
-                                                        'closed' => 'bg-green-100 text-green-800',
-                                                        default => 'bg-yellow-100 text-yellow-800'
-                                                    }; ?>">
-                                                    <?php echo ucfirst($ticket['status']); ?>
-                                                </span>
-                                                <i class="fas fa-chevron-down transition-transform" 
-                                                   :class="{'rotate-180': open}"></i>
-                                            </div>
-                                        </div>
-                                        <p class="text-sm text-gray-600">
-                                            Category: <?php echo htmlspecialchars($ticket['category_name']); ?> | 
-                                            Created: <?php echo date('M d, Y g:i A', strtotime($ticket['created_at'])); ?>
-                                        </p>
-                                    </div>
+                            <div class="flex items-center p-4 border rounded-lg">
+                                <div class="flex-1">
+                                    <h3 class="font-semibold"><?php echo htmlspecialchars($ticket['title']); ?></h3>
+                                    <p class="text-sm text-gray-600">
+                                        Category: <?php echo htmlspecialchars($ticket['category_name']); ?>
+                                    </p>
                                 </div>
-
-                                <!-- Expanded Content -->
-                                <div x-show="open" 
-                                     x-transition:enter="transition ease-out duration-200"
-                                     x-transition:enter-start="opacity-0 transform -translate-y-2"
-                                     x-transition:enter-end="opacity-100 transform translate-y-0"
-                                     x-transition:leave="transition ease-in duration-150"
-                                     x-transition:leave-start="opacity-100 transform translate-y-0"
-                                     x-transition:leave-end="opacity-0 transform -translate-y-2"
-                                     class="border-t px-4 py-3 bg-gray-50">
-                                    <!-- Description -->
-                                    <div class="mb-4">
-                                        <h4 class="text-sm font-semibold text-gray-700 mb-2">Description:</h4>
-                                        <p class="text-gray-600 whitespace-pre-line">
-                                            <?php echo htmlspecialchars($ticket['description']); ?>
-                                        </p>
-                                    </div>
-
-                                    <!-- Attachment if exists -->
-                                    <?php if (!empty($ticket['attachment_path'])): ?>
-                                    <div class="mb-4">
-                                        <h4 class="text-sm font-semibold text-gray-700 mb-2">Attachment:</h4>
-                                        <a href="<?php echo htmlspecialchars($ticket['attachment_path']); ?>" 
-                                           class="text-blue-600 hover:text-blue-800 flex items-center"
-                                           target="_blank">
-                                            <i class="fas fa-paperclip mr-2"></i>
-                                            View Attachment
-                                        </a>
-                                    </div>
-                                    <?php endif; ?>
-
-                                    <!-- Additional Details -->
-                                    <div class="flex justify-between items-center text-sm text-gray-600">
-                                        <div>
-                                            <p>Last Updated: <?php echo date('M d, Y g:i A', strtotime($ticket['updated_at'] ?? $ticket['created_at'])); ?></p>
-                                            <p>Ticket ID: #<?php echo $ticket['id']; ?></p>
-                                        </div>
-                                        <a href="view_ticket.php?id=<?php echo $ticket['id']; ?>" 
-                                           class="text-blue-600 hover:text-blue-800 flex items-center">
-                                            View Full Details 
-                                            <i class="fas fa-arrow-right ml-1"></i>
-                                        </a>
-                                    </div>
+                                <div class="text-right">
+                                    <span class="px-3 py-1 rounded-full text-sm 
+                                        <?php echo match($ticket['status']) {
+                                            'open' => 'bg-blue-100 text-blue-800',
+                                            'closed' => 'bg-green-100 text-green-800',
+                                            default => 'bg-yellow-100 text-yellow-800'
+                                        }; ?>">
+                                        <?php echo ucfirst($ticket['status']); ?>
+                                    </span>
                                 </div>
                             </div>
                             <?php endwhile; ?>
-
-                            <!-- Pagination -->
-                            <div class="flex justify-between items-center mt-4">
-                                <div class="text-sm text-gray-600">
-                                    Showing <span x-text="((currentPage - 1) * itemsPerPage) + 1"></span>
-                                    to <span x-text="Math.min(currentPage * itemsPerPage, totalItems)"></span>
-                                    of <span x-text="totalItems"></span> tickets
-                                </div>
-                                <div class="flex space-x-2">
-                                    <button @click="currentPage--" 
-                                            :disabled="currentPage === 1"
-                                            class="px-3 py-1 bg-gray-100 rounded disabled:opacity-50">
-                                        Previous
-                                    </button>
-                                    <button @click="currentPage++" 
-                                            :disabled="currentPage * itemsPerPage >= totalItems"
-                                            class="px-3 py-1 bg-gray-100 rounded disabled:opacity-50">
-                                        Next
-                                    </button>
-                                </div>
-                            </div>
                         </div>
                     </div>
                 </div>
             </div>
 
-            <!-- Create Ticket Tab -->
-            <div x-show="activeTab === 'create-ticket'"
-                 x-transition:enter="transition ease-out duration-200"
-                 x-transition:enter-start="opacity-0"
-                 x-transition:enter-end="opacity-100"
-                 class="space-y-6">
+            <!-- My Tickets Tab -->
+<div x-show="activeTab === 'my-tickets'" class="space-y-6">
+    <div class="flex justify-between items-center">
+        <h1 class="text-2xl font-bold text-gray-800">My Tickets</h1>
+    </div>
+
+    <!-- Search and Filter Section -->
+    <div class="bg-white rounded-lg shadow p-6">
+        <form method="GET" action="" class="space-y-4">
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <!-- Search by Title -->
+                <div>
+                    <label for="search" class="block text-sm font-medium text-gray-700">Search by Title</label>
+                    <input type="text" id="search" name="search" value="<?php echo isset($_GET['search']) ? htmlspecialchars($_GET['search']) : ''; ?>"
+                           class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500">
+                </div>
+
+                <!-- Filter by Status -->
+                <div>
+                    <label for="status" class="block text-sm font-medium text-gray-700">Filter by Status</label>
+                    <select id="status" name="status" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500">
+                        <option value="">All Statuses</option>
+                        <option value="open" <?php echo (isset($_GET['status']) && $_GET['status'] === 'open' ? 'selected' : ''); ?>>Open</option>
+                        <option value="closed" <?php echo (isset($_GET['status']) && $_GET['status'] === 'closed' ? 'selected' : ''); ?>>Closed</option>
+                        <option value="pending" <?php echo (isset($_GET['status']) && $_GET['status'] === 'pending' ? 'selected' : ''); ?>>Pending</option>
+                    </select>
+                </div>
+
+                <!-- Filter by Category -->
+                <div>
+                    <label for="category" class="block text-sm font-medium text-gray-700">Filter by Category</label>
+                    <select id="category" name="category" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500">
+                        <option value="">All Categories</option>
+                        <?php
+                        $categories_query = $mysqli->query("SELECT * FROM categories ORDER BY name");
+                        while ($category = $categories_query->fetch_assoc()) {
+                            $selected = (isset($_GET['category']) && $_GET['category'] == $category['id']) ? 'selected' : '';
+                            echo "<option value='" . htmlspecialchars($category['id']) . "' $selected>" . htmlspecialchars($category['name']) . "</option>";
+                        }
+                        ?>
+                    </select>
+                </div>
+            </div>
+
+            <!-- Submit Button -->
+            <div class="flex justify-end">
+                <button type="submit" class="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700">
+                    Apply Filters
+                </button>
+            </div>
+        </form>
+    </div>
+
+    <!-- Tickets List -->
+    <div class="bg-white rounded-lg shadow overflow-hidden">
+        <div x-data="{ expandedTicket: null }">
+            <?php
+            // Build the base query
+            $query = "SELECT t.*, c.name as category_name 
+                     FROM tickets t 
+                     LEFT JOIN categories c ON t.category_id = c.id 
+                     WHERE t.user_id = ? AND t.created_by = 'user'";
+
+            // Add search and filter conditions
+            $params = [$user_id];
+            $types = "i";
+
+            if (!empty($_GET['search'])) {
+                $query .= " AND t.title LIKE ?";
+                $params[] = '%' . $_GET['search'] . '%';
+                $types .= "s";
+            }
+
+            if (!empty($_GET['status'])) {
+                if ($_GET['status'] === 'pending') {
+                    $query .= " AND (t.status = 'pending' OR t.status = 'unseen')";
+                } else {
+                    $query .= " AND t.status = ?";
+                    $params[] = $_GET['status'];
+                    $types .= "s";
+                }
+            }
+
+            if (!empty($_GET['category'])) {
+                $query .= " AND t.category_id = ?";
+                $params[] = $_GET['category'];
+                $types .= "i";
+            }
+
+            $query .= " ORDER BY t.created_at DESC";
+
+            // Prepare and execute the query
+            $stmt = $mysqli->prepare($query);
+            $stmt->bind_param($types, ...$params);
+            $stmt->execute();
+            $result = $stmt->get_result();
+            ?>
+
+            <?php if ($result->num_rows > 0): ?>
+                <div class="divide-y divide-gray-200">
+                    <?php while ($ticket = $result->fetch_assoc()): ?>
+                        <div class="p-4">
+                            <div class="flex justify-between items-center cursor-pointer"
+                                 @click="expandedTicket = expandedTicket === <?php echo $ticket['id']; ?> ? null : <?php echo $ticket['id']; ?>">
+                                <div class="flex-1">
+                                    <h3 class="text-lg font-medium"><?php echo htmlspecialchars($ticket['title']); ?></h3>
+                                    <p class="text-sm text-gray-500">
+                                        Status: <span class="font-medium"><?php echo ucfirst($ticket['status']); ?></span>
+                                        • Created: <?php echo date('M d, Y', strtotime($ticket['created_at'])); ?>
+                                    </p>
+                                </div>
+                                <i class="fas" :class="expandedTicket === <?php echo $ticket['id']; ?> ? 'fa-chevron-up' : 'fa-chevron-down'"></i>
+                            </div>
+
+                            <div x-show="expandedTicket === <?php echo $ticket['id']; ?>" 
+                                 x-transition:enter="transition ease-out duration-200"
+                                 x-transition:enter-start="opacity-0 transform -translate-y-2"
+                                 x-transition:enter-end="opacity-100 transform translate-y-0"
+                                 class="mt-4">
+                                <div class="prose max-w-none">
+                                    <?php echo htmlspecialchars($ticket['description']); ?>
+                                </div>
+                                <div class="mt-4 text-sm text-gray-500">
+                                    Category: <?php echo htmlspecialchars($ticket['category_name']); ?>
+                                </div>
+                            </div>
+                        </div>
+                    <?php endwhile; ?>
+                </div>
+            <?php else: ?>
+                <div class="p-4 text-center text-gray-500">
+                    No tickets found
+                </div>
+            <?php endif; ?>
+        </div>
+    </div>
+</div>
+
+            <!-- Create Ticket -->
+            <div x-show="activeTab === 'create-ticket'" class="space-y-6">
                 <h1 class="text-2xl font-bold text-gray-800">Create New Ticket</h1>
                 
                 <div class="bg-white rounded-lg shadow p-6">
