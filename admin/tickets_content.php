@@ -10,7 +10,7 @@ $assignable_users = getAssignableUsers();
 $isAdmin = isset($_SESSION['staff_role']) && $_SESSION['staff_role'] === 'admin';
 
 $myTicketsCount = count(array_filter($tickets, function ($ticket) {
-    return $ticket['assigned_to'] == $_SESSION['user_id']; // Assuming the current user's ID is stored in session
+    return $ticket['assigned_to'] == $_SESSION['user_id'];
 }));
 
 $unassignedCount = count(array_filter($tickets, function ($ticket) {
