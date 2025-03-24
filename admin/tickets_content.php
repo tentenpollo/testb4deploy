@@ -6,13 +6,7 @@ $tickets = getAllTickets();
 $priorities = getAllPriorities();
 $categories = getAllCategories();
 $assignable_users = getAssignableUsers();
-if (!empty($_SESSION)) {
-    foreach ($_SESSION as $key => $value) {
-        echo "Key: $key, Value: $value<br>";
-    }
-} else {
-    echo "No session variables found.";
-}
+
 $isAdmin = isset($_SESSION['staff_role']) && $_SESSION['staff_role'] === 'admin';
 
 $myTicketsCount = count(array_filter($tickets, function ($ticket) {
