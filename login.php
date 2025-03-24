@@ -3,7 +3,7 @@ require_once 'includes/config.php';
 require_once 'includes/functions.php';
     
 if (is_logged_in()) {
-    header("Location: dashboard.php");
+    header("Location: users/user_dashboard.php");
     exit;
 }
 
@@ -46,7 +46,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             }
         } else {
             // Not found in staff, check normal users
-            $user_query = "SELECT user_id, password FROM users WHERE email = '$email_escaped'";
+            $user_query = "SELECT user_id, password, email FROM users WHERE email = '$email_escaped'";
             $user_result = $db->query($user_query);
             
             if ($user_result && $user_result->num_rows > 0) {
@@ -56,13 +56,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     // Set session variables for regular user
                     $_SESSION['user_id'] = $user['user_id'];
                     $_SESSION['is_staff'] = false;
+
                     
-                    // Update last login
-                    $user_id_escaped = $db->real_escape_string($user['user_id']);
-                    $update_query = "UPDATE users SET last_login = CURRENT_TIMESTAMP WHERE user_id = '$user_id_escaped'";
-                    $db->query($update_query);
-                    
-                    $redirect = $_SESSION['redirect_after_login'] ?? 'dashboard.php';
+                    $redirect = 'users/user_dashboard.php';
                     unset($_SESSION['redirect_after_login']);
                     
                     header("Location: $redirect");

@@ -1,4 +1,4 @@
-        body {
+body {
             background: #1a1f6b;
             /* Lighter navy blue */
         }
@@ -454,4 +454,23 @@
 
         .animate-fade-out {
             animation: fadeOut 0.5s ease-out;
+        }
+
+        /* Transition classes */
+        .transition {
+            transition-property: height, opacity;
+            transition-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
+            transition-duration: 200ms;
+        }
+
+        /* Add these responsive layout styles */
+        .h-auto {
+            height: auto !important;
+            min-height: calc(100vh - 4rem) !important;
+            /* 4rem accounts for the top navbar */
+        }
+
+        /* Handle overflow for expanded content */
+        .overflow-x-hidden {
+            overflow-x: hidden;
         }
