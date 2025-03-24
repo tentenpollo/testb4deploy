@@ -264,19 +264,6 @@ $user = $stmt->get_result()->fetch_assoc();
                                         </a>
                                     </div>
                                     <?php endif; ?>
-
-                                    <!-- Additional Details -->
-                                    <div class="flex justify-between items-center text-sm text-gray-600">
-                                        <div>
-                                            <p>Last Updated: <?php echo date('M d, Y g:i A', strtotime($ticket['updated_at'] ?? $ticket['created_at'])); ?></p>
-                                            <p>Ticket ID: #<?php echo $ticket['id']; ?></p>
-                                        </div>
-                                        <a href="view_ticket.php?id=<?php echo $ticket['id']; ?>" 
-                                           class="text-blue-600 hover:text-blue-800 flex items-center">
-                                            View Full Details 
-                                            <i class="fas fa-arrow-right ml-1"></i>
-                                        </a>
-                                    </div>
                                 </div>
                             </div>
                             <?php endwhile; ?>
