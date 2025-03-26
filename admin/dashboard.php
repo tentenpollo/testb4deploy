@@ -1,6 +1,20 @@
 <?php
 ob_start();
 require_once '../includes/config.php';
+require_once '../includes/functions.php';
+
+// At the top of your script or in config.php
+if (isset($_SESSION['user_id'])) {
+    $staff_member_id = getStaffMemberDetails();
+
+    if ($staff_member_id) {
+        $_SESSION['staff_member_id'] = $staff_member_id;
+    } else {
+        // Optional: handle case where no staff member is found
+        error_log("No staff member found for user ID: " . $_SESSION['user_id']);
+    }
+}
+
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -66,15 +80,15 @@ require_once '../includes/config.php';
                     <!-- User Info -->
                     <div class="px-4 py-3 border-b">
                         <p class="text-sm font-medium text-gray-900">
-                            <?php echo htmlspecialchars($_SESSION['name'] ?? 'User'); ?>
+                            <?php echo htmlspecialchars($_SESSION['staff_member_id']['name'] ?? 'User'); ?>
                         </p>
                         <p class="text-xs text-gray-500 truncate">
-                            <?php echo htmlspecialchars($_SESSION['email'] ?? 'email@example.com'); ?>
+                            <?php echo htmlspecialchars($_SESSION['staff_member_id']['email'] ?? 'email@example.com'); ?>
                         </p>
+                        <!-- Optionally, you can keep the role if needed -->
                         <p class="text-xs text-gray-500 mt-1">
                             <?php echo ucfirst(str_replace('_', ' ', htmlspecialchars($_SESSION['staff_role'] ?? 'Role'))); ?>
                         </p>
-
                     </div>
 
                     <!-- Menu Items -->
@@ -226,16 +240,16 @@ require_once '../includes/config.php';
 </body>
 
 <script>
-// Clear the URL parameter after the page has loaded and Alpine.js has initialized
-window.addEventListener('DOMContentLoaded', () => {
-    // Use setTimeout to ensure Alpine.js has had time to initialize
-    setTimeout(() => {
-        if (window.location.search) {
-            const currentPath = window.location.pathname;
-            window.history.replaceState({}, document.title, currentPath);
-        }
-    }, 100);
-});
+    // Clear the URL parameter after the page has loaded and Alpine.js has initialized
+    window.addEventListener('DOMContentLoaded', () => {
+        // Use setTimeout to ensure Alpine.js has had time to initialize
+        setTimeout(() => {
+            if (window.location.search) {
+                const currentPath = window.location.pathname;
+                window.history.replaceState({}, document.title, currentPath);
+            }
+        }, 100);
+    });
 </script>
 
 </html>

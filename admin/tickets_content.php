@@ -805,7 +805,7 @@ $pastDueCount = count(array_filter($tickets, function ($ticket) {
             isViewsListOpen: true,
             tempAssignments: {},
             currentPages: {
-                'unseen': 1,
+                'open': 1,
                 'seen': 1,
                 'resolved': 1
             },
@@ -832,7 +832,7 @@ $pastDueCount = count(array_filter($tickets, function ($ticket) {
                 console.log('Tickets:', this.tickets);
                 console.log('Filtered Tickets Example:', this.getFilteredTickets());
                 console.log('Tickets by Status:', {
-                    unseen: this.tickets.filter(t => t.status === 'unseen'),
+                    open: this.tickets.filter(t => t.status === 'open'),
                     seen: this.tickets.filter(t => t.status === 'seen'),
                     resolved: this.tickets.filter(t => t.status === 'resolved')
                 });
@@ -849,7 +849,7 @@ $pastDueCount = count(array_filter($tickets, function ($ticket) {
                 this.$watch('activeViewSection', (newValue) => {
                     this.activeViewSection = newValue;
                     this.currentPages = {
-                        'unseen': 1,
+                        'open': 1,
                         'seen': 1,
                         'resolved': 1
                     };
@@ -952,8 +952,8 @@ $pastDueCount = count(array_filter($tickets, function ($ticket) {
                     // No additional filtering needed
                 }
 
-                if (this.activeStatus === 'unseen') {
-                    filteredTickets = filteredTickets.filter(ticket => ticket.status === 'unseen');
+                if (this.activeStatus === 'open') {
+                    filteredTickets = filteredTickets.filter(ticket => ticket.status === 'open');
                 } else if (this.activeStatus === 'seen') {
                     filteredTickets = filteredTickets.filter(ticket =>
                         ticket.status === 'seen' || ticket.status === 'pending');
@@ -1547,11 +1547,11 @@ $pastDueCount = count(array_filter($tickets, function ($ticket) {
 
         <div x-show="activeViewSection !== 'all-tickets'" class="kanban-container">
             <div class="kanban-columns" x-data="ticketTable()">
-                <!-- Unseen Column -->
+                <!-- open Column -->
                 <div class="kanban-column">
                     <h2 class="text-md font-semibold text-gray-800 mb-4">Open</h2>
                     <div class="ticket-list">
-                        <template x-for="ticket in paginatedTickets('unseen')" :key="ticket.id">
+                        <template x-for="ticket in paginatedTickets('open')" :key="ticket.id">
                             <!-- Ticket Card -->
                             <div class="bg-white rounded-lg shadow-md p-3 mb-4 hover:shadow-lg transition-shadow">
                                 <!-- Ticket Header -->
@@ -1652,13 +1652,13 @@ $pastDueCount = count(array_filter($tickets, function ($ticket) {
                     </div>
                     <div class="pagination-controls">
                         <div class="flex justify-between">
-                            <button @click="prevPage('unseen')" :disabled="currentPages['unseen'] === 1"
+                            <button @click="prevPage('open')" :disabled="currentPages['open'] === 1"
                                 class="px-3 py-1 bg-gray-200 rounded">
                                 Previous
                             </button>
-                            <span x-text="`Page ${currentPages['unseen']}`"></span>
-                            <button @click="nextPage('unseen')"
-                                :disabled="currentPages['unseen'] * itemsPerPage >= getFilteredTickets().length"
+                            <span x-text="`Page ${currentPages['open']}`"></span>
+                            <button @click="nextPage('open')"
+                                :disabled="currentPages['open'] * itemsPerPage >= getFilteredTickets().length"
                                 class="px-3 py-1 bg-gray-200 rounded">
                                 Next
                             </button>
@@ -1936,7 +1936,7 @@ $pastDueCount = count(array_filter($tickets, function ($ticket) {
                         class="mt-1 block w-full py-2 px-3 border border-gray-300 bg-white rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
                         x-model="filters.status" @change="applyFilters()">
                         <option value="">All Statuses</option>
-                        <option value="unseen">Unseen</option>
+                        <option value="open">Open</option>
                         <option value="seen">Processing</option>
                         <option value="resolved">Resolved</option>
                     </select>
@@ -2087,10 +2087,10 @@ $pastDueCount = count(array_filter($tickets, function ($ticket) {
                             x-text="ticket.category_name || 'Uncategorized'"></td>
                         <td class="px-6 py-4 whitespace-nowrap text-sm">
                             <span class="px-2 py-1 inline-flex text-xs leading-5 font-semibold rounded-full" :class="{
-                                      'bg-yellow-100 text-yellow-800': ticket.status === 'unseen',
+                                      'bg-yellow-100 text-yellow-800': ticket.status === 'open',
                                       'bg-blue-100 text-blue-800': ticket.status === 'seen',
                                       'bg-green-100 text-green-800': ticket.status === 'resolved'
-                                  }" x-text="ticket.status === 'unseen' ? 'Unseen' : 
+                                  }" x-text="ticket.status === 'open' ? 'open' : 
                                           ticket.status === 'seen' ? 'Processing' : 'Resolved'">
                             </span>
                         </td>
@@ -2212,6 +2212,8 @@ $pastDueCount = count(array_filter($tickets, function ($ticket) {
 
             <div class="flex justify-between items-center p-4 border-b border-gray-200 sticky top-0 bg-white z-10">
                 <h2 class="text-xl font-bold text-gray-800" x-text="'Ticket #' + (currentTicket?.id || '')"></h2>
+                <p class="text-sm text-gray-600"><strong>Reference ID:</strong> <span
+                                        x-text="currentTicket?.ref_id"></span></p>
                 <div class="flex items-center space-x-4">
                     <button @click="archiveTicket()"
                         class="bg-amber-500 hover:bg-amber-600 text-white px-4 py-2 rounded">
@@ -2409,8 +2411,8 @@ $pastDueCount = count(array_filter($tickets, function ($ticket) {
                         <div class="mb-4">
                             <h4 class="font-medium mb-2">Update Status</h4>
                             <div class="flex flex-wrap gap-2">
-                                <button @click="updateStatus('unseen')" class="px-3 py-1 text-sm rounded-full"
-                                    :class="currentTicket?.status === 'unseen' ? 'bg-green-500 text-white' : 'bg-gray-200 hover:bg-gray-300'">
+                                <button @click="updateStatus('open')" class="px-3 py-1 text-sm rounded-full"
+                                    :class="currentTicket?.status === 'open' ? 'bg-green-500 text-white' : 'bg-gray-200 hover:bg-gray-300'">
                                     Open
                                 </button>
                                 <button @click="updateStatus('seen')" class="px-3 py-1 text-sm rounded-full"
