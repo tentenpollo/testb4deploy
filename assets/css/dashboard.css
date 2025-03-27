@@ -1,4 +1,4 @@
-        body {
+body {
             background: #1a1f6b;
             /* Lighter navy blue */
         }
@@ -9,7 +9,7 @@
         }
 
         .navy-bg {
-            background-color: #1a1f6b;
+            background-color: #1a1f36;
         }
 
         /* Reduce top navbar height */
@@ -200,7 +200,7 @@
         }
 
         .navy-bg {
-            background-color: #1a1f6b;
+            background-color: #1a1f36;
         }
 
         /* Lighter navy blue */
@@ -245,7 +245,7 @@
 
         .search-bar.expanded {
             width: 120%;
-            transform: scale(1.1);
+            transform: scale(1.02);
         }
 
         /* Navbar Active State Transition */
@@ -455,3 +455,21 @@
         .animate-fade-out {
             animation: fadeOut 0.5s ease-out;
         }
+
+        .search-bar {
+            transition: all 0.3s ease;
+        }
+
+        .search-bar.expanded {
+            transform: scale(1.02);
+        }
+
+        .sidebar-link {
+            transition: all 0.2s ease;
+        }
+
+        .sidebar-link:hover {
+            background-color: rgba(255, 255, 255, 0.1);
+        }
+
+        /* Add more custom styles as needed */
