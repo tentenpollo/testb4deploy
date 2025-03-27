@@ -59,7 +59,7 @@ $pastDueCount = count(array_filter($tickets, function ($ticket) {
         allTickets: <?php echo $allTicketsCount; ?>
     };
     window.sharedViewCounts = window.ticketCounts;
-    
+
     function basename(path) {
         return path.split('/').pop().split('\\').pop();
     }
@@ -107,19 +107,62 @@ $pastDueCount = count(array_filter($tickets, function ($ticket) {
             },
 
             downloadAttachment(attachment) {
-                // Use the exact filename as stored in the system
+                // Determine if this is an image file that can be previewed
+                const isImage = this.isImageAttachment(attachment);
+
+                if (isImage) {
+                    // Show the image in a viewer
+                    this.openImageViewer(attachment);
+                } else {
+                    // Original download behavior for non-images
+                    let downloadUrl = `ajax/ajax_handlers.php?action=download_attachment&ticket_id=${this.currentTicket.id}`;
+
+                    if (attachment.id) {
+                        downloadUrl += `&attachment_id=${attachment.id}`;
+                    } else if (attachment.comment_id) {
+                        const filename = attachment.filename || attachment.name || basename(attachment.file_path);
+                        downloadUrl += `&comment_id=${attachment.comment_id}&filename=${encodeURIComponent(filename)}`;
+                    } else {
+                        const filename = attachment.filename || attachment.name || basename(attachment.file_path);
+                        downloadUrl += `&filename=${encodeURIComponent(filename)}`;
+                    }
+
+                    window.location.href = downloadUrl;
+                }
+            },
+
+            isImageAttachment(attachment) {
+                // Get the filename
                 const filename = attachment.filename || attachment.name || basename(attachment.file_path);
+                const ext = filename.split('.').pop().toLowerCase();
 
-                // Check if this is a comment attachment (add comment_id parameter if it exists)
-                const commentParam = attachment.comment_id ? `&comment_id=${attachment.comment_id}` : '';
+                // List of image extensions that can be previewed
+                const imageExtensions = ['jpg', 'jpeg', 'png', 'gif', 'svg', 'webp', 'bmp'];
 
-                // Properly encode the filename to handle spaces and special characters
-                const downloadUrl = `ajax/ajax_handlers.php?action=download_attachment&ticket_id=${this.currentTicket.id}${commentParam}&filename=${encodeURIComponent(filename)}`;
+                return imageExtensions.includes(ext);
+            },
 
-                // Use a direct download approach
-                window.location.href = downloadUrl;
+            openImageViewer(attachment) {
+                // Construct the image URL
+                let imageUrl = `ajax/ajax_handlers.php?action=view_attachment&ticket_id=${this.currentTicket.id}`;
 
-                console.log(`Attempting to download: ${filename} via ${downloadUrl}`);
+                if (attachment.id) {
+                    imageUrl += `&attachment_id=${attachment.id}`;
+                } else if (attachment.comment_id) {
+                    const filename = attachment.filename || attachment.name || basename(attachment.file_path);
+                    imageUrl += `&comment_id=${attachment.comment_id}&filename=${encodeURIComponent(filename)}`;
+                } else {
+                    const filename = attachment.filename || attachment.name || basename(attachment.file_path);
+                    imageUrl += `&filename=${encodeURIComponent(filename)}`;
+                }
+
+                // Dispatch event to open the image viewer modal
+                window.dispatchEvent(new CustomEvent('open-image-viewer', {
+                    detail: {
+                        imageUrl: imageUrl,
+                        title: attachment.filename || attachment.name || basename(attachment.file_path)
+                    }
+                }));
             },
 
             async deleteAttachment(attachmentId, index) {
@@ -2213,7 +2256,7 @@ $pastDueCount = count(array_filter($tickets, function ($ticket) {
             <div class="flex justify-between items-center p-4 border-b border-gray-200 sticky top-0 bg-white z-10">
                 <h2 class="text-xl font-bold text-gray-800" x-text="'Ticket #' + (currentTicket?.id || '')"></h2>
                 <p class="text-sm text-gray-600"><strong>Reference ID:</strong> <span
-                                        x-text="currentTicket?.ref_id"></span></p>
+                        x-text="currentTicket?.ref_id"></span></p>
                 <div class="flex items-center space-x-4">
                     <button @click="archiveTicket()"
                         class="bg-amber-500 hover:bg-amber-600 text-white px-4 py-2 rounded">
@@ -2325,13 +2368,16 @@ $pastDueCount = count(array_filter($tickets, function ($ticket) {
                                                     class="mt-3 pt-2 border-t border-gray-200">
                                                     <p class="text-xs font-medium text-gray-500 mb-1">Attachments:</p>
                                                     <div class="flex flex-wrap gap-2">
+                                                        <!-- In your ticket details modal, where attachments are displayed -->
                                                         <template x-for="(file, fileIndex) in activity.attachments"
                                                             :key="fileIndex">
                                                             <div
                                                                 class="flex items-center bg-gray-100 rounded px-2 py-1 text-xs">
                                                                 <i class="fas fa-paperclip mr-1 text-gray-500"></i>
+                                                                <!-- Make filename clickable -->
                                                                 <span x-text="file.filename || file.name"
-                                                                    class="mr-1 truncate max-w-[120px]"></span>
+                                                                    @click="downloadAttachment(file)"
+                                                                    class="mr-1 truncate max-w-[120px] cursor-pointer hover:text-blue-500"></span>
                                                                 <button @click="downloadAttachment(file)"
                                                                     class="text-blue-500 hover:text-blue-700"
                                                                     title="Download">
@@ -2476,7 +2522,9 @@ $pastDueCount = count(array_filter($tickets, function ($ticket) {
                                     class="p-2 bg-gray-50 rounded border border-gray-200 flex items-center justify-between">
                                     <div class="flex items-center overflow-hidden">
                                         <i class="fas fa-paperclip mr-2 text-gray-500"></i>
-                                        <span class="text-sm truncate" x-text="attachment.filename"></span>
+                                        <!-- Make the filename clickable -->
+                                        <span class="text-sm truncate cursor-pointer hover:text-blue-600"
+                                            x-text="attachment.filename" @click="downloadAttachment(attachment)"></span>
                                     </div>
                                     <div class="flex items-center">
                                         <a :href="attachment.file_path"
@@ -2540,4 +2588,135 @@ $pastDueCount = count(array_filter($tickets, function ($ticket) {
         </div>
     </div>
 </div>
+<div x-data="enhancedImageViewer()" x-show="isOpen" class="fixed inset-0 z-50 overflow-hidden" x-cloak>
+    <!-- Modal Backdrop -->
+    <div x-show="isOpen" x-transition:enter="transition ease-out duration-300" x-transition:enter-start="opacity-0"
+        x-transition:enter-end="opacity-100" x-transition:leave="transition ease-in duration-200"
+        x-transition:leave-start="opacity-100" x-transition:leave-end="opacity-0" @click="closeViewer()"
+        class="fixed inset-0 bg-black bg-opacity-80">
+    </div>
+
+    <!-- Image Viewer Content -->
+    <div class="fixed inset-0 flex items-center justify-center p-4">
+        <div class="relative bg-white rounded-lg shadow-xl overflow-hidden"
+            style="max-width: 1000px; max-height: 90vh; width: 95%;">
+            <!-- Header -->
+            <div class="flex justify-between items-center p-4 border-b border-gray-200 bg-gray-100">
+                <h3 class="text-lg font-semibold text-gray-800 truncate" x-text="imageTitle"></h3>
+                <div class="flex space-x-3">
+                    <!-- Zoom controls -->
+                    <button @click="zoomOut()" class="text-gray-600 hover:text-gray-900 px-2">
+                        <i class="fas fa-search-minus"></i>
+                    </button>
+                    <button @click="resetZoom()" class="text-gray-600 hover:text-gray-900 px-2">
+                        <span x-text="Math.round(zoomLevel * 100) + '%'"></span>
+                    </button>
+                    <button @click="zoomIn()" class="text-gray-600 hover:text-gray-900 px-2">
+                        <i class="fas fa-search-plus"></i>
+                    </button>
+                    <a :href="imageUrl" download class="text-blue-500 hover:text-blue-700 px-2">
+                        <i class="fas fa-download"></i>
+                    </a>
+                    <button @click="closeViewer()" class="text-gray-500 hover:text-gray-700 px-2">
+                        <i class="fas fa-times"></i>
+                    </button>
+                </div>
+            </div>
+
+            <!-- Image Container with pan and zoom -->
+            <div class="overflow-auto bg-gray-800 relative" style="max-height: calc(90vh - 70px);" @mousedown="startPan"
+                @mousemove="pan" @mouseup="endPan" @mouseleave="endPan" @wheel.prevent="handleZoomWheel">
+                <div class="flex items-center justify-center min-h-[400px]"
+                    :style="`transform: scale(${zoomLevel}); transform-origin: 0 0; cursor: ${isPanning ? 'grabbing' : 'grab'};`"
+                    :class="{'transition-transform duration-200': !isPanning}">
+                    <img :src="imageUrl" class="max-w-full object-contain" style="transform-origin: center center;"
+                        :style="`transform: translate(${panX}px, ${panY}px);`" alt="Image preview">
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+    function enhancedImageViewer() {
+        return {
+            isOpen: false,
+            imageUrl: '',
+            imageTitle: '',
+            zoomLevel: 1,
+            minZoom: 0.5,
+            maxZoom: 5,
+            zoomStep: 0.2,
+            panX: 0,
+            panY: 0,
+            isPanning: false,
+            lastPanX: 0,
+            lastPanY: 0,
+
+            init() {
+                window.addEventListener('open-image-viewer', (event) => {
+                    this.openViewer(event.detail.imageUrl, event.detail.title);
+                });
+            },
+
+            openViewer(url, title) {
+                this.imageUrl = url;
+                this.imageTitle = title || 'Image Preview';
+                this.resetZoom();
+                this.isOpen = true;
+                document.body.classList.add('overflow-hidden');
+            },
+
+            closeViewer() {
+                this.isOpen = false;
+                document.body.classList.remove('overflow-hidden');
+            },
+
+            zoomIn() {
+                this.zoomLevel = Math.min(this.maxZoom, this.zoomLevel + this.zoomStep);
+            },
+
+            zoomOut() {
+                this.zoomLevel = Math.max(this.minZoom, this.zoomLevel - this.zoomStep);
+            },
+
+            resetZoom() {
+                this.zoomLevel = 1;
+                this.panX = 0;
+                this.panY = 0;
+            },
+
+            handleZoomWheel(e) {
+                if (e.deltaY < 0) {
+                    this.zoomIn();
+                } else {
+                    this.zoomOut();
+                }
+            },
+
+            startPan(e) {
+                this.isPanning = true;
+                this.lastPanX = e.clientX;
+                this.lastPanY = e.clientY;
+            },
+
+            pan(e) {
+                if (!this.isPanning) return;
+
+                const deltaX = e.clientX - this.lastPanX;
+                const deltaY = e.clientY - this.lastPanY;
+
+                this.panX += deltaX;
+                this.panY += deltaY;
+
+                this.lastPanX = e.clientX;
+                this.lastPanY = e.clientY;
+            },
+
+            endPan() {
+                this.isPanning = false;
+            }
+        };
+    }
+</script>
 </div>

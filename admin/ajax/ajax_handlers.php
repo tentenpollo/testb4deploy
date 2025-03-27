@@ -282,115 +282,331 @@ if (isset($_GET['action'])) {
             ]);
             break;
 
-        case 'download_attachment':
-            if (isset($_GET['ticket_id']) && isset($_GET['filename'])) {
+        case 'view_attachment':
+            if (isset($_GET['ticket_id'])) {
                 $ticket_id = $_GET['ticket_id'];
-                $filename = $_GET['filename'];
+                $db = db_connect();
+                $ticket_id = $db->real_escape_string($ticket_id);
 
-                // For debugging
-                error_log("Requested filename: " . $filename);
+                // Same lookup logic as download_attachment
+                if (isset($_GET['attachment_id'])) {
+                    $attachment_id = $_GET['attachment_id'];
+                    $attachment_id = $db->real_escape_string($attachment_id);
+                    $sql = "SELECT * FROM attachments WHERE id = '$attachment_id' AND ticket_id = '$ticket_id'";
+                } elseif (isset($_GET['filename']) && isset($_GET['comment_id'])) {
+                    $filename = urldecode($_GET['filename']);
+                    $comment_id = $_GET['comment_id'];
+                    $comment_id = $db->real_escape_string($comment_id);
+                    $sql = "SELECT * FROM attachments WHERE ticket_id = '$ticket_id' AND comment_id = '$comment_id'";
+                } elseif (isset($_GET['filename'])) {
+                    $filename = urldecode($_GET['filename']);
+                    $sql = "SELECT * FROM attachments WHERE ticket_id = '$ticket_id'";
+                } else {
+                    header('HTTP/1.1 400 Bad Request');
+                    echo 'Missing required parameters';
+                    break;
+                }
 
-                $ticket_attachments = get_ticket_attachments($ticket_id);
-                $valid_attachment = false;
-                $file_path = '';
+                $result = $db->query($sql);
 
-                // Check if the comment_id parameter exists
-                $comment_id = isset($_GET['comment_id']) ? $_GET['comment_id'] : null;
+                if (!$result) {
+                    header('HTTP/1.1 500 Internal Server Error');
+                    echo 'Database error';
+                    break;
+                }
 
-                foreach ($ticket_attachments as $attachment) {
-                    // Log each attachment filename for debugging
-                    error_log("Checking attachment: " . basename($attachment['file_path']));
+                $attachment = null;
 
-                    // Try exact match first
-                    if (basename($attachment['file_path']) === $filename) {
-                        if ($comment_id === null || (isset($attachment['comment_id']) && $attachment['comment_id'] == $comment_id)) {
-                            $valid_attachment = true;
-                            $file_path = $attachment['file_path'];
-                            break;
-                        }
+                // Direct attachment ID lookup should return just one row
+                if (isset($_GET['attachment_id'])) {
+                    if ($result->num_rows == 1) {
+                        $attachment = $result->fetch_assoc();
                     }
+                }
+                // Filename lookup might need to check multiple attachments
+                elseif (isset($_GET['filename'])) {
+                    $filename = urldecode($_GET['filename']);
 
-                    // Try case-insensitive match if exact match fails
-                    // This helps with inconsistent filename casing
-                    if (strcasecmp(basename($attachment['file_path']), $filename) === 0) {
-                        if ($comment_id === null || (isset($attachment['comment_id']) && $attachment['comment_id'] == $comment_id)) {
-                            $valid_attachment = true;
-                            $file_path = $attachment['file_path'];
+                    while ($row = $result->fetch_assoc()) {
+                        $stored_filename = basename($row['file_path']);
+
+                        // Try multiple matching methods (exact, prefix, case-insensitive)
+                        if (
+                            $stored_filename === $filename ||
+                            preg_match('/^\d+_' . preg_quote($filename, '/') . '$/', $stored_filename) ||
+                            strcasecmp($stored_filename, $filename) === 0
+                        ) {
+                            $attachment = $row;
                             break;
                         }
                     }
                 }
 
-                if (!$valid_attachment && strpos($filename, ' ') !== false) {
-                    // Special handling for filenames with spaces - try with URL decoded version
-                    $decoded_filename = urldecode($filename);
-                    error_log("Trying with decoded filename: " . $decoded_filename);
+                if ($attachment) {
+                    $file_path = $attachment['file_path'];
 
-                    foreach ($ticket_attachments as $attachment) {
-                        if (basename($attachment['file_path']) === $decoded_filename) {
-                            if ($comment_id === null || (isset($attachment['comment_id']) && $attachment['comment_id'] == $comment_id)) {
-                                $valid_attachment = true;
-                                $file_path = $attachment['file_path'];
+                    if (file_exists($file_path)) {
+                        // Get file extension and determine content type
+                        $file_ext = strtolower(pathinfo($file_path, PATHINFO_EXTENSION));
+                        $content_types = [
+                            'png' => 'image/png',
+                            'jpg' => 'image/jpeg',
+                            'jpeg' => 'image/jpeg',
+                            'gif' => 'image/gif',
+                            'svg' => 'image/svg+xml',
+                            'webp' => 'image/webp',
+                            'bmp' => 'image/bmp'
+                        ];
+
+                        // Only serve image types for viewing
+                        if (isset($content_types[$file_ext])) {
+                            $content_type = $content_types[$file_ext];
+
+                            // Clean output buffer
+                            while (ob_get_level()) {
+                                ob_end_clean();
+                            }
+
+                            // Set headers for displaying the image
+                            header('Content-Type: ' . $content_type);
+                            header('Content-Length: ' . filesize($file_path));
+
+                            // Output file
+                            readfile($file_path);
+                            exit;
+                        } else {
+                            // Not an image type
+                            header('HTTP/1.1 400 Bad Request');
+                            echo 'Not a viewable image type';
+                        }
+                    } else {
+                        // Try alternative paths as in the download handler
+                        $alternative_paths = [
+                            $_SERVER['DOCUMENT_ROOT'] . '/' . $file_path,
+                            $_SERVER['DOCUMENT_ROOT'] . '/uploads/' . basename($file_path),
+                            dirname($_SERVER['SCRIPT_FILENAME']) . '/../uploads/' . basename($file_path),
+                            // Add more as needed
+                        ];
+
+                        $found = false;
+                        foreach ($alternative_paths as $alt_path) {
+                            if (file_exists($alt_path)) {
+                                $file_ext = strtolower(pathinfo($alt_path, PATHINFO_EXTENSION));
+
+                                if (isset($content_types[$file_ext])) {
+                                    $content_type = $content_types[$file_ext];
+
+                                    while (ob_get_level()) {
+                                        ob_end_clean();
+                                    }
+
+                                    header('Content-Type: ' . $content_type);
+                                    header('Content-Length: ' . filesize($alt_path));
+
+                                    readfile($alt_path);
+                                    $found = true;
+                                    exit;
+                                }
+                            }
+                        }
+
+                        if (!$found) {
+                            header('HTTP/1.1 404 Not Found');
+                            echo 'File not found';
+                        }
+                    }
+                } else {
+                    header('HTTP/1.1 404 Not Found');
+                    echo 'Attachment not found';
+                }
+            } else {
+                header('HTTP/1.1 400 Bad Request');
+                echo 'Missing ticket ID';
+            }
+            break;
+
+        case 'download_attachment':
+            if (isset($_GET['ticket_id'])) {
+                $ticket_id = $_GET['ticket_id'];
+                $db = db_connect();
+                $ticket_id = $db->real_escape_string($ticket_id);
+
+                error_log("Download request - Ticket ID: $ticket_id");
+
+                // If attachment_id is provided, use that for direct lookup
+                if (isset($_GET['attachment_id'])) {
+                    $attachment_id = $_GET['attachment_id'];
+                    $attachment_id = $db->real_escape_string($attachment_id);
+
+                    error_log("Looking up by attachment ID: $attachment_id");
+                    $sql = "SELECT * FROM attachments WHERE id = '$attachment_id' AND ticket_id = '$ticket_id'";
+
+                } elseif (isset($_GET['filename']) && isset($_GET['comment_id'])) {
+                    // Legacy format - using filename and comment_id
+                    $filename = urldecode($_GET['filename']);
+                    $comment_id = $_GET['comment_id'];
+                    $comment_id = $db->real_escape_string($comment_id);
+
+                    error_log("Looking up by filename and comment_id: $filename, $comment_id");
+                    $sql = "SELECT * FROM attachments WHERE ticket_id = '$ticket_id' AND comment_id = '$comment_id'";
+
+                } elseif (isset($_GET['filename'])) {
+                    // Just using filename without comment_id
+                    $filename = urldecode($_GET['filename']);
+
+                    error_log("Looking up by filename only: $filename");
+                    $sql = "SELECT * FROM attachments WHERE ticket_id = '$ticket_id'";
+
+                } else {
+                    echo json_encode(['success' => false, 'error' => 'Missing required parameters']);
+                    break;
+                }
+
+                error_log("SQL Query: $sql");
+                $result = $db->query($sql);
+
+                if (!$result) {
+                    error_log("Database error: " . $db->error);
+                    echo json_encode(['success' => false, 'error' => 'Database error']);
+                    break;
+                }
+
+                $attachment = null;
+
+                // Direct attachment ID lookup should return just one row
+                if (isset($_GET['attachment_id'])) {
+                    if ($result->num_rows == 1) {
+                        $attachment = $result->fetch_assoc();
+                    }
+                }
+                // Filename lookup might need to check multiple attachments
+                elseif (isset($_GET['filename'])) {
+                    $filename = urldecode($_GET['filename']);
+
+                    while ($row = $result->fetch_assoc()) {
+                        $stored_filename = basename($row['file_path']);
+
+                        // Try exact match first
+                        if ($stored_filename === $filename) {
+                            $attachment = $row;
+                            error_log("Found exact filename match: $stored_filename");
+                            break;
+                        }
+
+                        // Try prefix match (timestamp_filename)
+                        if (preg_match('/^\d+_(.*)$/', $stored_filename, $matches)) {
+                            $original_name = $matches[1];
+                            if ($original_name === $filename) {
+                                $attachment = $row;
+                                error_log("Found match with timestamp prefix: $stored_filename");
                                 break;
                             }
                         }
+
+                        // Try case-insensitive match
+                        if (strcasecmp($stored_filename, $filename) === 0) {
+                            $attachment = $row;
+                            error_log("Found case-insensitive match: $stored_filename");
+                            break;
+                        }
                     }
                 }
 
-                if ($valid_attachment && file_exists($file_path)) {
-                    // Set appropriate content type based on file extension
-                    $file_ext = pathinfo($file_path, PATHINFO_EXTENSION);
-                    $content_type = 'application/octet-stream'; // Default
+                if ($attachment) {
+                    $file_path = $attachment['file_path'];
+                    error_log("Found attachment with path: $file_path");
 
-                    // Set specific content types for common file types
-                    if (strtolower($file_ext) === 'jpg' || strtolower($file_ext) === 'jpeg') {
-                        $content_type = 'image/jpeg';
-                    } elseif (strtolower($file_ext) === 'png') {
-                        $content_type = 'image/png';
-                    } elseif (strtolower($file_ext) === 'pdf') {
-                        $content_type = 'application/pdf';
-                    }
+                    // Check if file exists
+                    if (file_exists($file_path)) {
+                        error_log("File exists at: $file_path");
 
-                    // Clean output buffer before sending headers
-                    while (ob_get_level()) {
-                        ob_end_clean();
-                    }
+                        // Get file extension and determine content type
+                        $file_ext = strtolower(pathinfo($file_path, PATHINFO_EXTENSION));
+                        $content_types = [
+                            'png' => 'image/png',
+                            'jpg' => 'image/jpeg',
+                            'jpeg' => 'image/jpeg',
+                            'gif' => 'image/gif',
+                            'pdf' => 'application/pdf',
+                            'doc' => 'application/msword',
+                            'docx' => 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+                            'xls' => 'application/vnd.ms-excel',
+                            'xlsx' => 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+                            'txt' => 'text/plain',
+                            'csv' => 'text/csv',
+                            'zip' => 'application/zip',
+                            'rar' => 'application/x-rar-compressed'
+                        ];
 
-                    // Force download headers
-                    header('Content-Description: File Transfer');
-                    header('Content-Type: ' . $content_type);
-                    // Use proper filename for Content-Disposition, including handling for spaces
-                    header('Content-Disposition: attachment; filename="' . basename($file_path) . '"');
-                    header('Expires: 0');
-                    header('Cache-Control: must-revalidate');
-                    header('Pragma: public');
-                    header('Content-Length: ' . filesize($file_path));
-                    flush();
+                        $content_type = isset($content_types[$file_ext]) ?
+                            $content_types[$file_ext] : 'application/octet-stream';
 
-                    // Output file
-                    readfile($file_path);
-                    exit;
-                } else {
-                    // Enhanced error logging for debugging
-                    error_log("Download failed for: " . $filename);
-                    error_log("Valid attachment: " . ($valid_attachment ? 'true' : 'false'));
-                    if ($file_path) {
-                        error_log("File exists: " . (file_exists($file_path) ? 'true' : 'false'));
-                        error_log("File path: " . $file_path);
+                        // Clean output buffer to prevent issues with file download
+                        while (ob_get_level()) {
+                            ob_end_clean();
+                        }
+
+                        // Set appropriate headers for file download
+                        header('Content-Description: File Transfer');
+                        header('Content-Type: ' . $content_type);
+                        header('Content-Disposition: attachment; filename="' . basename($file_path) . '"');
+                        header('Expires: 0');
+                        header('Cache-Control: must-revalidate');
+                        header('Pragma: public');
+                        header('Content-Length: ' . filesize($file_path));
+
+                        // Output file contents and exit
+                        readfile($file_path);
+                        exit;
                     } else {
-                        error_log("No matching file path found");
-                    }
+                        error_log("ERROR: File not found at path: $file_path");
 
-                    // List all available attachments for debugging
-                    error_log("Available attachments:");
-                    foreach ($ticket_attachments as $attachment) {
-                        error_log("- " . basename($attachment['file_path']));
-                    }
+                        // Try some common alternative paths in case the path is relative or stored differently
+                        $alternative_paths = [
+                            $_SERVER['DOCUMENT_ROOT'] . '/' . $file_path,
+                            $_SERVER['DOCUMENT_ROOT'] . '/uploads/' . basename($file_path),
+                            dirname($_SERVER['SCRIPT_FILENAME']) . '/../uploads/' . basename($file_path),
+                            // Add more possible paths as needed for your specific setup
+                        ];
 
-                    echo json_encode(['success' => false, 'error' => 'File not found']);
+                        $found = false;
+                        foreach ($alternative_paths as $alt_path) {
+                            error_log("Checking alternative path: $alt_path");
+                            if (file_exists($alt_path)) {
+                                error_log("File found at alternative path: $alt_path");
+
+                                // Same headers as above
+                                $file_ext = strtolower(pathinfo($alt_path, PATHINFO_EXTENSION));
+                                $content_type = isset($content_types[$file_ext]) ?
+                                    $content_types[$file_ext] : 'application/octet-stream';
+
+                                while (ob_get_level()) {
+                                    ob_end_clean();
+                                }
+
+                                header('Content-Description: File Transfer');
+                                header('Content-Type: ' . $content_type);
+                                header('Content-Disposition: attachment; filename="' . basename($alt_path) . '"');
+                                header('Expires: 0');
+                                header('Cache-Control: must-revalidate');
+                                header('Pragma: public');
+                                header('Content-Length: ' . filesize($alt_path));
+
+                                readfile($alt_path);
+                                exit;
+                            }
+                        }
+
+                        if (!$found) {
+                            echo json_encode(['success' => false, 'error' => 'File not found on server']);
+                        }
+                    }
+                } else {
+                    error_log("No matching attachment found in database");
+                    echo json_encode(['success' => false, 'error' => 'No matching attachment found']);
                 }
             } else {
-                echo json_encode(['success' => false, 'error' => 'Missing ticket ID or filename']);
+                echo json_encode(['success' => false, 'error' => 'Missing ticket ID']);
             }
             break;
 
