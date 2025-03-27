@@ -3,7 +3,7 @@
 -- https://www.phpmyadmin.net/
 --
 -- Host: localhost
--- Generation Time: Mar 17, 2025 at 07:52 AM
+-- Generation Time: Mar 27, 2025 at 06:41 AM
 -- Server version: 10.4.32-MariaDB
 -- PHP Version: 8.0.30
 
@@ -30,22 +30,25 @@ SET time_zone = "+00:00";
 CREATE TABLE `attachments` (
   `id` int(11) NOT NULL,
   `ticket_id` int(11) NOT NULL,
-  `message_id` int(11) DEFAULT NULL,
+  `comment_id` int(11) DEFAULT NULL,
   `filename` varchar(50) NOT NULL,
   `file_path` varchar(255) NOT NULL,
   `uploaded_by_user_id` int(11) DEFAULT NULL COMMENT 'Regular user who uploaded the file',
   `uploaded_by_staff_member_id` int(11) DEFAULT NULL COMMENT 'Staff member who uploaded the file',
   `uploaded_by_guest_email` varchar(255) DEFAULT NULL COMMENT 'Guest who uploaded the file',
   `created_at` timestamp NOT NULL DEFAULT current_timestamp()
-) ;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 
 --
 -- Dumping data for table `attachments`
 --
 
-INSERT INTO `attachments` (`id`, `ticket_id`, `message_id`, `filename`, `file_path`, `uploaded_by_user_id`, `uploaded_by_staff_member_id`, `uploaded_by_guest_email`, `created_at`) VALUES
-(3, 10, NULL, '7764f55a-c55b-47c6-89e0-22cc12afca4f (1).jpg', '../../uploads/tickets/10/1741833253_7764f55a-c55b-47c6-89e0-22cc12afca4f (1).jpg', NULL, 4, NULL, '2025-03-13 02:34:13'),
-(10, 15, NULL, 'banana.jpg', '../../uploads/tickets/15/1742191714_banana.jpg', NULL, 4, NULL, '2025-03-17 06:08:34');
+INSERT INTO `attachments` (`id`, `ticket_id`, `comment_id`, `filename`, `file_path`, `uploaded_by_user_id`, `uploaded_by_staff_member_id`, `uploaded_by_guest_email`, `created_at`) VALUES
+(3, 10, NULL, '7764f55a-c55b-47c6-89e0-22cc12afca4f (1).jpg', '../../uploads/tickets/10/1741833253_7764f55a-c55b-47c6-89e0-22cc12afca4f (1).jpg', NULL, 4, NULL, '2025-03-12 18:34:13'),
+(10, 15, NULL, 'banana.jpg', '../../uploads/tickets/15/1742191714_banana.jpg', NULL, 4, NULL, '2025-03-16 22:08:34'),
+(14, 14, NULL, 'Screenshot (1).png', '../../uploads/tickets/14/1742534927_Screenshot (1).png', NULL, 4, NULL, '2025-03-20 21:28:47'),
+(17, 14, 36, 'Screenshot 2024-12-12 030752.png', '../../uploads/tickets/14/1742538044_Screenshot 2024-12-12 030752.png', NULL, 4, NULL, '2025-03-21 06:20:44'),
+(18, 16, NULL, '67e4e47bb12f6.png', '../uploads/tickets/16/67e4e47bb12f6.png', 5, NULL, NULL, '2025-03-27 05:39:07');
 
 -- --------------------------------------------------------
 
@@ -99,6 +102,33 @@ INSERT INTO `category_subcategories` (`category_id`, `subcategory_id`) VALUES
 -- --------------------------------------------------------
 
 --
+-- Table structure for table `entity_logs`
+--
+
+CREATE TABLE `entity_logs` (
+  `id` int(11) NOT NULL,
+  `entity_type` enum('category','priority','subcategory') NOT NULL,
+  `entity_id` int(11) NOT NULL,
+  `action` enum('add','update','delete') NOT NULL,
+  `old_value` text DEFAULT NULL,
+  `new_value` text DEFAULT NULL,
+  `staff_id` int(11) NOT NULL,
+  `created_at` timestamp NOT NULL DEFAULT current_timestamp()
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+--
+-- Dumping data for table `entity_logs`
+--
+
+INSERT INTO `entity_logs` (`id`, `entity_type`, `entity_id`, `action`, `old_value`, `new_value`, `staff_id`, `created_at`) VALUES
+(1, 'category', 13, 'add', NULL, 'name: testing, description: QWEQWEQWE', 4, '2025-03-21 01:24:33'),
+(2, 'category', 13, 'delete', 'name: testing, description: QWEQWEQWE', NULL, 4, '2025-03-21 01:24:52'),
+(3, 'priority', 3, 'update', 'name: High, level: 1', 'name: Urgent, level: 1', 4, '2025-03-21 01:29:16'),
+(4, 'priority', 3, 'update', 'name: Urgent, level: 1', 'name: High, level: 1', 4, '2025-03-21 05:07:34');
+
+-- --------------------------------------------------------
+
+--
 -- Table structure for table `guest_users`
 --
 
@@ -146,7 +176,7 @@ CREATE TABLE `priorities` (
 INSERT INTO `priorities` (`id`, `name`, `level`, `created_at`, `updated_at`) VALUES
 (1, 'Low', 3, '2025-03-05 06:04:31', '2025-03-05 06:04:31'),
 (2, 'Medium', 2, '2025-03-05 06:04:31', '2025-03-05 06:04:31'),
-(3, 'High', 1, '2025-03-05 06:04:31', '2025-03-13 14:32:25');
+(3, 'High', 1, '2025-03-05 06:04:31', '2025-03-21 05:07:34');
 
 -- --------------------------------------------------------
 
@@ -169,7 +199,7 @@ CREATE TABLE `staff_members` (
 --
 
 INSERT INTO `staff_members` (`id`, `name`, `password`, `email`, `role`, `created_at`, `updated_at`) VALUES
-(4, 'Admin User', '$2y$10$92IXUNpkjO0rOQ5byMi.Ye4oKoEa3Ro9llC/.og/at2.uheWG/igi', 'admin@example.com', 'admin', '2025-03-06 00:48:56', '2025-03-17 05:33:02'),
+(4, 'Admin User', '$2y$10$92IXUNpkjO0rOQ5byMi.Ye4oKoEa3Ro9llC/.og/at2.uheWG/igi', 'admin@example.com', 'admin', '2025-03-06 00:48:56', '2025-03-27 05:41:32'),
 (6, 'Zyreel Pacis', '$2y$10$kmCMk0IYabaZNzPA6Jk8TuH.0MyT37uY1n7Cf4a2646GfzPaOTGmu', 'test@outlook.com', 'master_agent', '2025-03-06 01:32:35', '2025-03-06 02:47:04'),
 (8, 'Stephanie Mae', '$2y$10$hBxuiZgAFaYezKfX3IVDRu9hgUD.eQuDVWGA3bB4aJ0LuTGCyc/de', 'ackasn@gmail.comm', 'master_agent', '2025-03-12 06:37:21', '2025-03-13 14:26:45');
 
@@ -213,7 +243,7 @@ CREATE TABLE `tickets` (
   `id` int(11) NOT NULL,
   `title` varchar(255) NOT NULL,
   `description` text NOT NULL,
-  `status` enum('unseen','seen','resolved','pending') NOT NULL DEFAULT 'unseen',
+  `status` enum('seen','resolved','pending','open') NOT NULL DEFAULT 'open',
   `created_by` enum('user','guest') NOT NULL COMMENT 'Type of creator (user or guest)',
   `user_id` int(11) DEFAULT NULL COMMENT 'ID of the user who created the ticket (if created_by = "user")',
   `guest_email` varchar(255) DEFAULT NULL COMMENT 'Email of the guest who created the ticket (if created_by = "guest")',
@@ -222,20 +252,22 @@ CREATE TABLE `tickets` (
   `assigned_to` int(11) DEFAULT NULL COMMENT 'Assigned to a staff member (admin/master agent/agent)',
   `created_at` timestamp NOT NULL DEFAULT current_timestamp(),
   `updated_at` timestamp NOT NULL DEFAULT current_timestamp() ON UPDATE current_timestamp(),
-  `is_archived` tinyint(1) NOT NULL DEFAULT 0
+  `is_archived` tinyint(1) NOT NULL DEFAULT 0,
+  `ref_id` varchar(50) DEFAULT NULL
 ) ;
 
 --
 -- Dumping data for table `tickets`
 --
 
-INSERT INTO `tickets` (`id`, `title`, `description`, `status`, `created_by`, `user_id`, `guest_email`, `category_id`, `priority_id`, `assigned_to`, `created_at`, `updated_at`, `is_archived`) VALUES
-(9, 'Login Issue', 'Unable to log in to my account.', 'resolved', 'guest', NULL, 'guest1@example.com', 1, 1, 8, '2025-03-05 13:46:52', '2025-03-12 15:00:43', 0),
-(10, 'Payment Failed', 'My payment was deducted, but I did not receive a confirmation.', 'unseen', 'guest', NULL, 'guest2@example.com', 2, 1, 8, '2025-03-05 13:46:52', '2025-03-17 02:01:30', 0),
-(11, 'Bug in Dashboard', 'The reports section is not loading properly.', 'seen', 'guest', NULL, 'guest3@example.com', 1, 2, 8, '2025-03-05 13:46:52', '2025-03-16 19:19:16', 0),
-(12, 'Account Locked', 'My account got locked after multiple failed login attempts.', 'resolved', 'guest', NULL, 'guest5@example.com', 1, 3, 4, '2025-03-05 13:46:52', '2025-03-16 19:31:05', 0),
-(14, '12312321', '123213123213', 'unseen', 'guest', NULL, 'tenten_belando@outlook.com', 2, 1, 4, '2025-03-10 14:25:44', '2025-03-16 23:58:35', 0),
-(15, 'Banana', 'Sample image of a banana', 'seen', 'guest', NULL, 'tentenpollo1010@outlook.com', 3, 1, 4, '2025-03-17 05:18:59', '2025-03-17 06:26:10', 0);
+INSERT INTO `tickets` (`id`, `title`, `description`, `status`, `created_by`, `user_id`, `guest_email`, `category_id`, `priority_id`, `assigned_to`, `created_at`, `updated_at`, `is_archived`, `ref_id`) VALUES
+(9, 'Login Issue', 'Unable to log in to my account.', 'resolved', 'guest', NULL, 'guest1@example.com', 1, 1, 8, '2025-03-05 13:46:52', '2025-03-24 23:59:45', 0, 'REF-101297924981391360'),
+(10, 'Payment Failed', 'My payment was deducted, but I did not receive a confirmation.', 'open', 'guest', NULL, 'guest2@example.com', 2, 1, 8, '2025-03-05 13:46:52', '2025-03-25 00:01:22', 0, 'REF-101297924981391361'),
+(11, 'Bug in Dashboard', 'The reports section is not loading properly.', 'seen', 'guest', NULL, 'guest3@example.com', 1, 2, 8, '2025-03-05 13:46:52', '2025-03-24 23:59:45', 0, 'REF-101297924981391362'),
+(12, 'Account Locked', 'My account got locked after multiple failed login attempts.', 'resolved', 'guest', NULL, 'guest5@example.com', 1, 3, 4, '2025-03-05 13:46:52', '2025-03-24 23:59:45', 0, 'REF-101297924981391363'),
+(14, '12312321', '123213123213', 'pending', 'guest', NULL, 'tenten_belando@outlook.com', 2, 2, 4, '2025-03-10 14:25:44', '2025-03-27 05:41:39', 0, 'REF-101297924981391364'),
+(15, 'Banana', 'Sample image of a banana', 'pending', 'guest', NULL, 'tentenpollo1010@outlook.com', 3, 3, 4, '2025-03-17 05:18:59', '2025-03-24 23:59:45', 0, 'REF-101297924981391365'),
+(16, 'test', '123123', '', 'user', 5, NULL, 2, NULL, NULL, '2025-03-27 05:39:07', '2025-03-27 05:39:07', 0, NULL);
 
 -- --------------------------------------------------------
 
@@ -263,7 +295,44 @@ INSERT INTO `ticket_comments` (`id`, `ticket_id`, `user_id`, `type`, `content`, 
 (1, 14, 4, 'comment', '<p>test msg</p>', NULL, NULL, 1, '2025-03-17 03:41:31'),
 (2, 14, 4, 'comment', '<p>test</p>', NULL, NULL, 0, '2025-03-17 03:43:43'),
 (3, 15, 4, 'comment', '<p>HI</p>', NULL, NULL, 0, '2025-03-17 05:22:32'),
-(13, 15, 4, 'comment', '<p>test</p>', NULL, NULL, 1, '2025-03-17 06:08:51');
+(13, 15, 4, 'comment', '<p>test</p>', NULL, NULL, 1, '2025-03-17 06:08:51'),
+(14, 15, 4, 'comment', '<ol><li>test</li><li>test2</li></ol>', NULL, NULL, 1, '2025-03-17 07:10:39'),
+(36, 14, 4, 'comment', '<p>test</p>', NULL, NULL, 1, '2025-03-21 06:20:44');
+
+-- --------------------------------------------------------
+
+--
+-- Table structure for table `ticket_history`
+--
+
+CREATE TABLE `ticket_history` (
+  `id` int(11) NOT NULL,
+  `ticket_id` int(11) NOT NULL,
+  `staff_id` int(11) NOT NULL,
+  `type` enum('status_change','priority_change','assignment','comment','attachment','attachment_delete','archive','deletion') NOT NULL,
+  `old_value` text DEFAULT NULL,
+  `new_value` text DEFAULT NULL,
+  `created_at` timestamp NOT NULL DEFAULT current_timestamp()
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+--
+-- Dumping data for table `ticket_history`
+--
+
+INSERT INTO `ticket_history` (`id`, `ticket_id`, `staff_id`, `type`, `old_value`, `new_value`, `created_at`) VALUES
+(1, 14, 4, 'priority_change', 'Medium', 'Medium', '2025-03-21 00:57:08'),
+(2, 14, 4, 'attachment', NULL, 'Uploaded file: Screenshot (1).png', '2025-03-21 05:20:53'),
+(3, 14, 4, 'attachment', NULL, 'Uploaded file: Screenshot 2024-12-10 204411.png', '2025-03-21 05:22:12'),
+(4, 14, 4, 'attachment_delete', NULL, NULL, '2025-03-21 05:28:34'),
+(5, 14, 4, 'attachment_delete', NULL, NULL, '2025-03-21 05:28:41'),
+(6, 14, 4, 'attachment', NULL, 'Uploaded file: Screenshot (1).png', '2025-03-21 05:28:47'),
+(28, 14, 4, 'comment', NULL, '<p>test</p>', '2025-03-21 06:20:44'),
+(29, 14, 4, 'status_change', 'open', 'seen', '2025-03-25 00:03:23'),
+(30, 14, 4, 'status_change', 'seen', 'pending', '2025-03-25 00:03:30'),
+(31, 14, 4, 'status_change', 'pending', 'resolved', '2025-03-25 00:03:35'),
+(32, 14, 4, 'status_change', 'resolved', 'open', '2025-03-25 00:03:41'),
+(33, 14, 4, 'status_change', 'open', 'seen', '2025-03-27 05:41:37'),
+(34, 14, 4, 'status_change', 'seen', 'pending', '2025-03-27 05:41:39');
 
 -- --------------------------------------------------------
 
@@ -295,7 +364,6 @@ CREATE TABLE `users` (
   `password` varchar(255) NOT NULL,
   `email` varchar(255) NOT NULL,
   `phone` int(11) NOT NULL,
-  `last_login` timestamp NULL DEFAULT NULL,
   `created_at` timestamp NOT NULL DEFAULT current_timestamp(),
   `updated_at` timestamp NOT NULL DEFAULT current_timestamp() ON UPDATE current_timestamp()
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
@@ -305,7 +373,7 @@ CREATE TABLE `users` (
 --
 
 INSERT INTO `users` (`user_id`, `username`, `first_name`, `last_name`, `password`, `email`, `phone`, `created_at`, `updated_at`) VALUES
-(5, 'abelando', 'Alessandro', 'Belando', '$2y$10$ouqGJL9aDyQXJ4gXf0WmleS6xJGlxXhcd7nWOfwb7rPXnwC1i9Rcq', 'tenten_belando@outlook.com', 0, '2025-03-06 00:29:07', '2025-03-06 00:29:07'),
+(5, 'abelando', 'Alessandro', 'Belando', '$2y$10$ouqGJL9aDyQXJ4gXf0WmleS6xJGlxXhcd7nWOfwb7rPXnwC1i9Rcq', 'tenten_belando@outlook.com', 0, '2025-03-06 00:29:07', '2025-03-27 05:38:33'),
 (7, 'abelando1', 'Alessandro', 'Belando', '$2y$10$n2rxdK/4HDGWYXVikEAsAOXrdfbN.7Cn7KhEPXQKoF83/gnvxUPMe', 'testing123@gmail.com', 123456789, '2025-03-10 06:12:31', '2025-03-10 06:12:31');
 
 --
@@ -318,7 +386,7 @@ INSERT INTO `users` (`user_id`, `username`, `first_name`, `last_name`, `password
 ALTER TABLE `attachments`
   ADD PRIMARY KEY (`id`),
   ADD KEY `ticket_id` (`ticket_id`),
-  ADD KEY `message_id` (`message_id`),
+  ADD KEY `comment_id` (`comment_id`),
   ADD KEY `uploaded_by_user_id` (`uploaded_by_user_id`),
   ADD KEY `uploaded_by_staff_member_id` (`uploaded_by_staff_member_id`);
 
@@ -335,6 +403,13 @@ ALTER TABLE `categories`
 ALTER TABLE `category_subcategories`
   ADD PRIMARY KEY (`category_id`,`subcategory_id`),
   ADD KEY `subcategory_id` (`subcategory_id`);
+
+--
+-- Indexes for table `entity_logs`
+--
+ALTER TABLE `entity_logs`
+  ADD PRIMARY KEY (`id`),
+  ADD KEY `staff_id` (`staff_id`);
 
 --
 -- Indexes for table `guest_users`
@@ -388,6 +463,14 @@ ALTER TABLE `ticket_comments`
   ADD KEY `user_id` (`user_id`);
 
 --
+-- Indexes for table `ticket_history`
+--
+ALTER TABLE `ticket_history`
+  ADD PRIMARY KEY (`id`),
+  ADD KEY `ticket_id` (`ticket_id`),
+  ADD KEY `staff_id` (`staff_id`);
+
+--
 -- Indexes for table `ticket_messages`
 --
 ALTER TABLE `ticket_messages`
@@ -412,13 +495,19 @@ ALTER TABLE `users`
 -- AUTO_INCREMENT for table `attachments`
 --
 ALTER TABLE `attachments`
-  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT;
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=19;
 
 --
 -- AUTO_INCREMENT for table `categories`
 --
 ALTER TABLE `categories`
-  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=13;
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=14;
+
+--
+-- AUTO_INCREMENT for table `entity_logs`
+--
+ALTER TABLE `entity_logs`
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=5;
 
 --
 -- AUTO_INCREMENT for table `guest_users`
@@ -454,7 +543,13 @@ ALTER TABLE `tickets`
 -- AUTO_INCREMENT for table `ticket_comments`
 --
 ALTER TABLE `ticket_comments`
-  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=14;
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=37;
+
+--
+-- AUTO_INCREMENT for table `ticket_history`
+--
+ALTER TABLE `ticket_history`
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=35;
 
 --
 -- AUTO_INCREMENT for table `ticket_messages`
@@ -477,7 +572,7 @@ ALTER TABLE `users`
 --
 ALTER TABLE `attachments`
   ADD CONSTRAINT `attachments_ibfk_1` FOREIGN KEY (`ticket_id`) REFERENCES `tickets` (`id`) ON DELETE CASCADE,
-  ADD CONSTRAINT `attachments_ibfk_2` FOREIGN KEY (`message_id`) REFERENCES `ticket_messages` (`id`) ON DELETE CASCADE,
+  ADD CONSTRAINT `attachments_ibfk_2` FOREIGN KEY (`comment_id`) REFERENCES `ticket_comments` (`id`) ON DELETE CASCADE,
   ADD CONSTRAINT `attachments_ibfk_3` FOREIGN KEY (`uploaded_by_user_id`) REFERENCES `users` (`user_id`) ON DELETE SET NULL,
   ADD CONSTRAINT `attachments_ibfk_4` FOREIGN KEY (`uploaded_by_staff_member_id`) REFERENCES `staff_members` (`id`) ON DELETE SET NULL;
 
@@ -487,6 +582,12 @@ ALTER TABLE `attachments`
 ALTER TABLE `category_subcategories`
   ADD CONSTRAINT `category_subcategories_ibfk_1` FOREIGN KEY (`category_id`) REFERENCES `categories` (`id`) ON DELETE CASCADE,
   ADD CONSTRAINT `category_subcategories_ibfk_2` FOREIGN KEY (`subcategory_id`) REFERENCES `subcategories` (`id`) ON DELETE CASCADE;
+
+--
+-- Constraints for table `entity_logs`
+--
+ALTER TABLE `entity_logs`
+  ADD CONSTRAINT `entity_logs_ibfk_1` FOREIGN KEY (`staff_id`) REFERENCES `staff_members` (`id`) ON DELETE CASCADE;
 
 --
 -- Constraints for table `subcategories`
@@ -509,6 +610,13 @@ ALTER TABLE `tickets`
 ALTER TABLE `ticket_comments`
   ADD CONSTRAINT `ticket_comments_ibfk_1` FOREIGN KEY (`ticket_id`) REFERENCES `tickets` (`id`),
   ADD CONSTRAINT `ticket_comments_ibfk_2` FOREIGN KEY (`user_id`) REFERENCES `staff_members` (`id`);
+
+--
+-- Constraints for table `ticket_history`
+--
+ALTER TABLE `ticket_history`
+  ADD CONSTRAINT `ticket_history_ibfk_1` FOREIGN KEY (`ticket_id`) REFERENCES `tickets` (`id`) ON DELETE CASCADE,
+  ADD CONSTRAINT `ticket_history_ibfk_2` FOREIGN KEY (`staff_id`) REFERENCES `staff_members` (`id`) ON DELETE CASCADE;
 
 --
 -- Constraints for table `ticket_messages`
