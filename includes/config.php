@@ -10,6 +10,18 @@ define('DB_NAME', 'ticketing_system');
 define('DB_USER', 'root');
 define('DB_PASS', '');
 
+// Add upload directory configuration
+define('UPLOAD_DIR', __DIR__ . '/../uploads/');
+define('MAX_UPLOAD_SIZE', 5 * 1024 * 1024); // 5MB
+
+// Add allowed file types
+define('ALLOWED_FILE_TYPES', [
+    'image/jpeg',
+    'image/png',
+    'application/pdf',
+    'text/plain'
+]);
+
 // Global connection variable
 $mysqli = null;
 

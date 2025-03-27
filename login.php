@@ -59,10 +59,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     
                     // Update last login
                     $user_id_escaped = $db->real_escape_string($user['user_id']);
-                    $update_query = "UPDATE users SET last_login = CURRENT_TIMESTAMP WHERE user_id = '$user_id_escaped'";
+                    $update_query = "UPDATE users SET updated_at = CURRENT_TIMESTAMP WHERE user_id = '$user_id_escaped'";
+                    try {
+                        // Try to update last_login if column exists
+                        $db->query("UPDATE users SET last_login = CURRENT_TIMESTAMP WHERE user_id = '$user_id_escaped'");
+                    } catch (mysqli_sql_exception $e) {
+                        // Column doesn't exist yet, ignore the error
+                    }
+
                     $db->query($update_query);
                     
-                    $redirect = $_SESSION['redirect_after_login'] ?? 'dashboard.php';
+                    // Change redirect to user dashboard
+                    $redirect = $_SESSION['redirect_after_login'] ?? 'user/user_dashboard.php';
                     unset($_SESSION['redirect_after_login']);
                     
                     header("Location: $redirect");
