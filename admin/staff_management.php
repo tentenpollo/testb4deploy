@@ -20,10 +20,6 @@ if (isset($_SESSION['registration_success'])) {
 
 $mysqli = db_connect();
 
-if (!isset($_SESSION['user_id']) || ($_SESSION['staff_role'] != 'admin' && $_SESSION['staff_role'] != 'master_agent')) {
-    header('Location: login.php');
-    exit;
-}
 
 // Handle user deletion
 if (isset($_GET['action']) && $_GET['action'] === 'delete' && isset($_GET['id'])) {

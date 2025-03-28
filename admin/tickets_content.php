@@ -107,28 +107,35 @@ $pastDueCount = count(array_filter($tickets, function ($ticket) {
             },
 
             downloadAttachment(attachment) {
-                // Determine if this is an image file that can be previewed
-                const isImage = this.isImageAttachment(attachment);
+                // Create download URL with consistent parameters
+                let downloadUrl = `ajax/ajax_handlers.php?action=download_attachment&ticket_id=${this.currentTicket.id}`;
 
-                if (isImage) {
-                    // Show the image in a viewer
-                    this.openImageViewer(attachment);
+                // Add identifier parameters based on what's available
+                if (attachment.id) {
+                    downloadUrl += `&attachment_id=${attachment.id}`;
+                } else if (attachment.comment_id) {
+                    const filename = attachment.filename || attachment.name || this.basename(attachment.file_path);
+                    downloadUrl += `&comment_id=${attachment.comment_id}&filename=${encodeURIComponent(filename)}`;
                 } else {
-                    // Original download behavior for non-images
-                    let downloadUrl = `ajax/ajax_handlers.php?action=download_attachment&ticket_id=${this.currentTicket.id}`;
-
-                    if (attachment.id) {
-                        downloadUrl += `&attachment_id=${attachment.id}`;
-                    } else if (attachment.comment_id) {
-                        const filename = attachment.filename || attachment.name || basename(attachment.file_path);
-                        downloadUrl += `&comment_id=${attachment.comment_id}&filename=${encodeURIComponent(filename)}`;
-                    } else {
-                        const filename = attachment.filename || attachment.name || basename(attachment.file_path);
-                        downloadUrl += `&filename=${encodeURIComponent(filename)}`;
-                    }
-
-                    window.location.href = downloadUrl;
+                    const filename = attachment.filename || attachment.name || this.basename(attachment.file_path);
+                    downloadUrl += `&filename=${encodeURIComponent(filename)}`;
                 }
+
+                // Add a force_download parameter to ensure consistent download behavior
+                downloadUrl += `&force_download=1`;
+
+                // Use a hidden anchor element with download attribute for more reliable downloading
+                const link = document.createElement('a');
+                link.href = downloadUrl;
+                link.setAttribute('download', ''); // This tells browser to download instead of navigate
+                link.style.display = 'none';
+                document.body.appendChild(link);
+                link.click();
+
+                // Clean up after a delay
+                setTimeout(() => {
+                    document.body.removeChild(link);
+                }, 1000);
             },
 
             isImageAttachment(attachment) {

@@ -44,20 +44,8 @@ function db_connect() {
     return $mysqli;
 }
 
-function is_logged_in() {
-    return isset($_SESSION['user_id']);
-}
-
 function is_guest() {
     return isset($_SESSION['guest_id']);
-}
-
-function require_login() {
-    if (!is_logged_in() && !is_guest()) {
-        $_SESSION['redirect_after_login'] = $_SERVER['REQUEST_URI'];
-        header("Location: login.php");
-        exit;
-    }
 }
 
 // Generate random token
