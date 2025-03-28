@@ -100,7 +100,7 @@ $pastDueCount = count(array_filter($tickets, function ($ticket) {
                     );
                 } else if (this.activeTab === 'internal') {
                     return this.ticketHistory.filter(activity =>
-                        activity.type === 'comment' && activity.is_internal === '1'
+                        activity.type === 'comment' && activity.is_internal !== '0'
                     );
                 }
                 return this.ticketHistory;
@@ -2360,9 +2360,14 @@ $pastDueCount = count(array_filter($tickets, function ($ticket) {
                                                             <span class="text-xs text-gray-500"
                                                                 x-text="formatDate(activity.created_at)"></span>
                                                         </div>
-                                                        <div x-show="activity.is_internal"
+                                                        <div x-show="activity.is_internal === '1'"
                                                             class="text-xs bg-yellow-200 text-yellow-800 px-2 py-0.5 rounded inline-block mb-1">
                                                             Internal Note
+                                                        </div>
+
+                                                        <div x-show="activity.is_internal === '0'"
+                                                            class="text-xs bg-blue-200 text-blue-800 px-2 py-0.5 rounded inline-block mb-1">
+                                                            User Communication
                                                         </div>
                                                     </div>
                                                 </div>
