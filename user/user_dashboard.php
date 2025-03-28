@@ -29,6 +29,9 @@ $user = $stmt->get_result()->fetch_assoc();
     <script src="https://cdn.tailwindcss.com"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <link rel="stylesheet" href="../assets/css/dashboard.css">
+    <style>
+        [x-cloak] { display: none !important; }
+    </style>
 </head>
 
 <body x-data="{ 
@@ -36,8 +39,13 @@ $user = $stmt->get_result()->fetch_assoc();
     searchExpanded: false,
     profileMenuOpen: false,
     activeTab: 'my-tickets',
-    showCreateTicket: false
-}">
+    showCreateTicket: false,
+    ticketModalOpen: false // Add this line
+}"
+    x-init="$watch('ticketModalOpen', value => {
+        if (value) document.body.classList.add('overflow-hidden');
+        else document.body.classList.remove('overflow-hidden');
+    })">
     <!-- Top Navigation Bar -->
     <nav class="navy-bg h-16 flex items-center px-6 fixed w-full z-50">
         <!-- Logo -->
@@ -333,30 +341,23 @@ $user = $stmt->get_result()->fetch_assoc();
             <?php if ($result->num_rows > 0): ?>
                 <div class="divide-y divide-gray-200">
                     <?php while ($ticket = $result->fetch_assoc()): ?>
-                        <div class="p-4">
-                            <div class="flex justify-between items-center cursor-pointer"
-                                 @click="expandedTicket = expandedTicket === <?php echo $ticket['id']; ?> ? null : <?php echo $ticket['id']; ?>">
-                                <div class="flex-1">
-                                    <h3 class="text-lg font-medium"><?php echo htmlspecialchars($ticket['title']); ?></h3>
-                                    <p class="text-sm text-gray-500">
-                                        Status: <span class="font-medium"><?php echo ucfirst($ticket['status']); ?></span>
-                                        • Created: <?php echo date('M d, Y', strtotime($ticket['created_at'])); ?>
-                                    </p>
-                                </div>
-                                <i class="fas" :class="expandedTicket === <?php echo $ticket['id']; ?> ? 'fa-chevron-up' : 'fa-chevron-down'"></i>
-                            </div>
-
-                            <div x-show="expandedTicket === <?php echo $ticket['id']; ?>" 
-                                 x-transition:enter="transition ease-out duration-200"
-                                 x-transition:enter-start="opacity-0 transform -translate-y-2"
-                                 x-transition:enter-end="opacity-100 transform translate-y-0"
-                                 class="mt-4">
-                                <div class="prose max-w-none">
-                                    <?php echo htmlspecialchars($ticket['description']); ?>
-                                </div>
-                                <div class="mt-4 text-sm text-gray-500">
+                        <div class="flex items-center p-4 border rounded-lg cursor-pointer"
+                             @click="$dispatch('open-ticket-modal', { ticketId: <?php echo $ticket['id']; ?> })">
+                            <div class="flex-1">
+                                <h3 class="font-semibold"><?php echo htmlspecialchars($ticket['title']); ?></h3>
+                                <p class="text-sm text-gray-600">
                                     Category: <?php echo htmlspecialchars($ticket['category_name']); ?>
-                                </div>
+                                </p>
+                            </div>
+                            <div class="text-right">
+                                <span class="px-3 py-1 rounded-full text-sm 
+                                    <?php echo match($ticket['status']) {
+                                        'open' => 'bg-blue-100 text-blue-800',
+                                        'closed' => 'bg-green-100 text-green-800',
+                                        default => 'bg-yellow-100 text-yellow-800'
+                                    }; ?>">
+                                    <?php echo ucfirst($ticket['status']); ?>
+                                </span>
                             </div>
                         </div>
                     <?php endwhile; ?>
@@ -417,5 +418,245 @@ $user = $stmt->get_result()->fetch_assoc();
             </div>
         </main>
     </div>
+
+<!-- Ticket Details Modal -->
+<div x-data="ticketDetailsModal()" 
+     x-show="isOpen" 
+     x-on:open-ticket-modal.window="openModal($event.detail.ticketId)"
+     class="fixed inset-0 z-50 flex items-center justify-center" 
+     x-cloak>
+    <div class="absolute inset-0 bg-black opacity-50"></div>
+    
+    <div class="relative bg-white rounded-lg max-w-4xl w-full max-h-[90vh] overflow-y-auto">
+        <!-- Modal Header -->
+        <div class="flex justify-between items-center p-4 border-b">
+            <h2 class="text-xl font-bold" x-text="currentTicket ? currentTicket.title : 'Ticket Details'"></h2>
+            <button @click="closeModal()" class="text-gray-500 hover:text-gray-700">
+                <i class="fas fa-times"></i>
+            </button>
+        </div>
+
+        <!-- Modal Content -->
+        <div class="p-6">
+            <template x-if="currentTicket">
+                <!-- Ticket Details -->
+                <div class="space-y-6">
+                    <!-- Status and Category -->
+                    <div class="grid grid-cols-2 gap-4">
+                        <div>
+                            <h3 class="text-sm font-medium text-gray-500">Status</h3>
+                            <p class="mt-1">
+                                <span x-text="currentTicket.status" 
+                                      class="px-2 py-1 text-sm rounded-full"
+                                      :class="{
+                                          'bg-blue-100 text-blue-800': currentTicket.status === 'open',
+                                          'bg-green-100 text-green-800': currentTicket.status === 'closed',
+                                          'bg-yellow-100 text-yellow-800': ['pending', 'in_progress'].includes(currentTicket.status)
+                                      }">
+                                </span>
+                            </p>
+                        </div>
+                        <div>
+                            <h3 class="text-sm font-medium text-gray-500">Category</h3>
+                            <p class="mt-1" x-text="currentTicket.category_name"></p>
+                        </div>
+                    </div>
+
+                    <!-- Description -->
+                    <div>
+                        <h3 class="text-sm font-medium text-gray-500">Description</h3>
+                        <p class="mt-1" x-text="currentTicket.description"></p>
+                    </div>
+
+                    <!-- Attachments -->
+                    <div x-show="attachments.length > 0">
+                        <h3 class="text-sm font-medium text-gray-500 mb-2">Attachments</h3>
+                        <div class="space-y-2">
+                            <template x-for="attachment in attachments" :key="attachment.id">
+                                <div class="flex items-center space-x-2">
+                                    <i class="fas fa-paperclip text-gray-400"></i>
+                                    <a @click="downloadAttachment(attachment)" 
+                                       class="text-blue-600 hover:underline cursor-pointer"
+                                       x-text="attachment.filename">
+                                    </a>
+                                </div>
+                            </template>
+                        </div>
+                    </div>
+
+                    <!-- Ticket History -->
+                    <div>
+                        <h3 class="text-sm font-medium text-gray-500 mb-4">Ticket History</h3>
+                        <div class="space-y-4">
+                            <template x-for="item in ticketHistory" :key="item.id">
+                                <div class="border rounded-lg p-4">
+                                    <div class="flex justify-between items-start">
+                                        <div>
+                                            <p x-text="item.content"></p>
+                                            <div class="mt-2" x-show="item.attachments && item.attachments.length > 0">
+                                                <template x-for="attachment in item.attachments" :key="attachment.id">
+                                                    <a @click="downloadAttachment(attachment)"
+                                                       class="text-blue-600 hover:underline cursor-pointer mr-2"
+                                                       x-text="attachment.filename">
+                                                    </a>
+                                                </template>
+                                            </div>
+                                        </div>
+                                        <span class="text-sm text-gray-500" x-text="formatDate(item.created_at)"></span>
+                                    </div>
+                                </div>
+                            </template>
+                        </div>
+                    </div>
+
+                    <!-- Reply Form -->
+                    <div class="mt-6 border-t pt-6">
+                        <h3 class="text-sm font-medium text-gray-500 mb-4">Reply to Ticket</h3>
+                        <div class="space-y-4">
+                            <div>
+                                <textarea x-ref="replyContent" 
+                                    class="w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
+                                    rows="4"
+                                    placeholder="Type your reply here..."></textarea>
+                            </div>
+                            <div>
+                                <input type="file" 
+                                    x-ref="replyAttachment"
+                                    class="block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-md file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100">
+                                <p class="mt-1 text-xs text-gray-500">Allowed file types: JPEG, PNG, PDF, TXT. Max size: 5MB</p>
+                            </div>
+                            <div class="flex justify-end">
+                                <button @click="submitReply()"
+                                    class="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500">
+                                    Send Reply
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </template>
+        </div>
+    </div>
+</div>
+
+<script>
+window.ticketDetailsModal = function() {
+    return {
+        isOpen: false,
+        currentTicket: null,
+        ticketHistory: [],
+        attachments: [],
+
+        openModal(ticketId) {
+            console.log("Opening modal for ticket:", ticketId); // Debug line
+            this.isOpen = true;
+            this.loadTicketDetails(ticketId);
+            this.loadTicketHistory(ticketId);
+            this.loadTicketAttachments(ticketId);
+        },
+
+        closeModal() {
+            this.isOpen = false;
+            this.currentTicket = null;
+            this.ticketHistory = [];
+            this.attachments = [];
+            document.body.classList.remove('overflow-hidden');
+        },
+
+        async loadTicketDetails(ticketId) {
+            try {
+                const response = await fetch(`../admin/ajax/ajax_handlers.php?action=get_ticket_details&ticket_id=${ticketId}`);
+                const data = await response.json();
+
+                if (data.success) {
+                    this.currentTicket = data.ticket;
+                } else {
+                    alert('Error loading ticket details');
+                }
+            } catch (error) {
+                console.error('Failed to load ticket details:', error);
+            }
+        },
+
+        async loadTicketHistory(ticketId) {
+            try {
+                const response = await fetch(`../admin/ajax/ajax_handlers.php?action=get_ticket_history&ticket_id=${ticketId}`);
+                const data = await response.json();
+
+                if (data.success) {
+                    this.ticketHistory = data.history;
+                }
+            } catch (error) {
+                console.error('Failed to load ticket history:', error);
+            }
+        },
+
+        async loadTicketAttachments(ticketId) {
+            try {
+                const response = await fetch(`../admin/ajax/ajax_handlers.php?action=get_ticket_attachments&ticket_id=${ticketId}`);
+                const data = await response.json();
+
+                if (data.success) {
+                    this.attachments = data.attachments;
+                }
+            } catch (error) {
+                console.error('Failed to load attachments:', error);
+            }
+        },
+
+        async downloadAttachment(attachment) {
+            window.location.href = `../admin/ajax/ajax_handlers.php?action=download_attachment&ticket_id=${this.currentTicket.id}&attachment_id=${attachment.id}`;
+        },
+
+        formatDate(dateString) {
+            return new Date(dateString).toLocaleString();
+        },
+
+        async submitReply() {
+            if (!this.currentTicket) return;
+            
+            const content = this.$refs.replyContent.value.trim();
+            if (!content) {
+                alert('Please enter a reply');
+                return;
+            }
+
+            const formData = new FormData();
+            formData.append('ticket_id', this.currentTicket.id);
+            formData.append('content', content);
+            
+            // Add attachment if present
+            const attachment = this.$refs.replyAttachment.files[0];
+            if (attachment) {
+                formData.append('attachment', attachment);
+            }
+
+            try {
+                const response = await fetch('../admin/ajax/ajax_handlers.php?action=add_ticket_reply', {
+                    method: 'POST',
+                    body: formData
+                });
+
+                const data = await response.json();
+
+                if (data.success) {
+                    // Clear form
+                    this.$refs.replyContent.value = '';
+                    this.$refs.replyAttachment.value = '';
+                    
+                    // Reload ticket history
+                    await this.loadTicketHistory(this.currentTicket.id);
+                    await this.loadTicketAttachments(this.currentTicket.id);
+                } else {
+                    alert('Error sending reply: ' + data.error);
+                }
+            } catch (error) {
+                console.error('Failed to send reply:', error);
+                alert('Failed to send reply. Please try again.');
+            }
+        }
+    }
+}
+</script>
 </body>
 </html>

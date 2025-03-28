@@ -634,6 +634,28 @@ if (isset($_GET['action'])) {
             }
             break;
 
+        case 'add_ticket_reply':
+            if (!isset($_POST['ticket_id']) || !isset($_POST['content'])) {
+                echo json_encode(['success' => false, 'error' => 'Missing required parameters']);
+                break;
+            }
+
+            $ticket_id = intval($_POST['ticket_id']);
+            $content = $_POST['content'];
+            $user_id = $_SESSION['user_id'];
+
+            // Handle file upload if present
+            $attachments = isset($_FILES['attachment']) ? [$_FILES['attachment']] : [];
+
+            $result = add_ticket_comment($ticket_id, $user_id, $content, $attachments, 'user', false);
+
+            if ($result) {
+                echo json_encode(['success' => true, 'comment_id' => $result]);
+            } else {
+                echo json_encode(['success' => false, 'error' => 'Failed to add reply']);
+            }
+            break;
+
         default:
             echo json_encode(['success' => false, 'error' => 'Invalid action']);
             break;
