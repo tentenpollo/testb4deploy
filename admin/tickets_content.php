@@ -107,7 +107,6 @@ $pastDueCount = count(array_filter($tickets, function ($ticket) {
             },
 
             downloadAttachment(attachment) {
-                // Create download URL with consistent parameters
                 let downloadUrl = `ajax/ajax_handlers.php?action=download_attachment&ticket_id=${this.currentTicket.id}`;
 
                 // Add identifier parameters based on what's available
@@ -143,7 +142,8 @@ $pastDueCount = count(array_filter($tickets, function ($ticket) {
                 const filename = attachment.filename || attachment.name || basename(attachment.file_path);
                 const ext = filename.split('.').pop().toLowerCase();
 
-                // List of image extensions that can be previewed
+                console.log(filename)
+                console.log(ext)
                 const imageExtensions = ['jpg', 'jpeg', 'png', 'gif', 'svg', 'webp', 'bmp'];
 
                 return imageExtensions.includes(ext);
@@ -2383,7 +2383,7 @@ $pastDueCount = count(array_filter($tickets, function ($ticket) {
                                                                 <i class="fas fa-paperclip mr-1 text-gray-500"></i>
                                                                 <!-- Make filename clickable -->
                                                                 <span x-text="file.filename || file.name"
-                                                                    @click="downloadAttachment(file)"
+                                                                    @click="isImageAttachment(file) ? openImageViewer(file) : downloadAttachment(file)"
                                                                     class="mr-1 truncate max-w-[120px] cursor-pointer hover:text-blue-500"></span>
                                                                 <button @click="downloadAttachment(file)"
                                                                     class="text-blue-500 hover:text-blue-700"
@@ -2529,9 +2529,9 @@ $pastDueCount = count(array_filter($tickets, function ($ticket) {
                                     class="p-2 bg-gray-50 rounded border border-gray-200 flex items-center justify-between">
                                     <div class="flex items-center overflow-hidden">
                                         <i class="fas fa-paperclip mr-2 text-gray-500"></i>
-                                        <!-- Make the filename clickable -->
                                         <span class="text-sm truncate cursor-pointer hover:text-blue-600"
-                                            x-text="attachment.filename" @click="downloadAttachment(attachment)"></span>
+                                            x-text="attachment.filename"
+                                            @click="isImageAttachment(attachment) ? openImageViewer(attachment) : downloadAttachment(attachment)"></span>
                                     </div>
                                     <div class="flex items-center">
                                         <a :href="attachment.file_path"

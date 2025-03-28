@@ -8,9 +8,6 @@ body {
             font-size: 0.75rem;
         }
 
-        .navy-bg {
-            background-color: #1a1f36;
-        }
 
         /* Reduce top navbar height */
         nav.h-16 {
@@ -197,10 +194,6 @@ body {
         .rounded-content {
             border-top-left-radius: 20px;
             /* Slightly smaller radius */
-        }
-
-        .navy-bg {
-            background-color: #1a1f36;
         }
 
         /* Lighter navy blue */

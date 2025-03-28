@@ -401,7 +401,7 @@ if (isset($_GET['action'])) {
 
                                     header('Content-Type: ' . $content_type);
                                     header('Content-Length: ' . filesize($alt_path));
-
+                                    header('Content-Disposition: inline; filename="' . basename($file_path) . '"');
                                     readfile($alt_path);
                                     $found = true;
                                     exit;
