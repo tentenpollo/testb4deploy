@@ -107,28 +107,34 @@ $pastDueCount = count(array_filter($tickets, function ($ticket) {
             },
 
             downloadAttachment(attachment) {
-                // Determine if this is an image file that can be previewed
-                const isImage = this.isImageAttachment(attachment);
+                let downloadUrl = `ajax/ajax_handlers.php?action=download_attachment&ticket_id=${this.currentTicket.id}`;
 
-                if (isImage) {
-                    // Show the image in a viewer
-                    this.openImageViewer(attachment);
+                // Add identifier parameters based on what's available
+                if (attachment.id) {
+                    downloadUrl += `&attachment_id=${attachment.id}`;
+                } else if (attachment.comment_id) {
+                    const filename = attachment.filename || attachment.name || this.basename(attachment.file_path);
+                    downloadUrl += `&comment_id=${attachment.comment_id}&filename=${encodeURIComponent(filename)}`;
                 } else {
-                    // Original download behavior for non-images
-                    let downloadUrl = `ajax/ajax_handlers.php?action=download_attachment&ticket_id=${this.currentTicket.id}`;
-
-                    if (attachment.id) {
-                        downloadUrl += `&attachment_id=${attachment.id}`;
-                    } else if (attachment.comment_id) {
-                        const filename = attachment.filename || attachment.name || basename(attachment.file_path);
-                        downloadUrl += `&comment_id=${attachment.comment_id}&filename=${encodeURIComponent(filename)}`;
-                    } else {
-                        const filename = attachment.filename || attachment.name || basename(attachment.file_path);
-                        downloadUrl += `&filename=${encodeURIComponent(filename)}`;
-                    }
-
-                    window.location.href = downloadUrl;
+                    const filename = attachment.filename || attachment.name || this.basename(attachment.file_path);
+                    downloadUrl += `&filename=${encodeURIComponent(filename)}`;
                 }
+
+                // Add a force_download parameter to ensure consistent download behavior
+                downloadUrl += `&force_download=1`;
+
+                // Use a hidden anchor element with download attribute for more reliable downloading
+                const link = document.createElement('a');
+                link.href = downloadUrl;
+                link.setAttribute('download', ''); // This tells browser to download instead of navigate
+                link.style.display = 'none';
+                document.body.appendChild(link);
+                link.click();
+
+                // Clean up after a delay
+                setTimeout(() => {
+                    document.body.removeChild(link);
+                }, 1000);
             },
 
             isImageAttachment(attachment) {
@@ -136,7 +142,8 @@ $pastDueCount = count(array_filter($tickets, function ($ticket) {
                 const filename = attachment.filename || attachment.name || basename(attachment.file_path);
                 const ext = filename.split('.').pop().toLowerCase();
 
-                // List of image extensions that can be previewed
+                console.log(filename)
+                console.log(ext)
                 const imageExtensions = ['jpg', 'jpeg', 'png', 'gif', 'svg', 'webp', 'bmp'];
 
                 return imageExtensions.includes(ext);
@@ -2376,7 +2383,7 @@ $pastDueCount = count(array_filter($tickets, function ($ticket) {
                                                                 <i class="fas fa-paperclip mr-1 text-gray-500"></i>
                                                                 <!-- Make filename clickable -->
                                                                 <span x-text="file.filename || file.name"
-                                                                    @click="downloadAttachment(file)"
+                                                                    @click="isImageAttachment(file) ? openImageViewer(file) : downloadAttachment(file)"
                                                                     class="mr-1 truncate max-w-[120px] cursor-pointer hover:text-blue-500"></span>
                                                                 <button @click="downloadAttachment(file)"
                                                                     class="text-blue-500 hover:text-blue-700"
@@ -2522,9 +2529,9 @@ $pastDueCount = count(array_filter($tickets, function ($ticket) {
                                     class="p-2 bg-gray-50 rounded border border-gray-200 flex items-center justify-between">
                                     <div class="flex items-center overflow-hidden">
                                         <i class="fas fa-paperclip mr-2 text-gray-500"></i>
-                                        <!-- Make the filename clickable -->
                                         <span class="text-sm truncate cursor-pointer hover:text-blue-600"
-                                            x-text="attachment.filename" @click="downloadAttachment(attachment)"></span>
+                                            x-text="attachment.filename"
+                                            @click="isImageAttachment(attachment) ? openImageViewer(attachment) : downloadAttachment(attachment)"></span>
                                     </div>
                                     <div class="flex items-center">
                                         <a :href="attachment.file_path"

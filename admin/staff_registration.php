@@ -1,12 +1,6 @@
 <?php
 require_once '../includes/config.php';
 
-// Check if user is authorized (admin or master_agent)
-if (!isset($_SESSION['user_id']) || ($_SESSION['staff_role'] != 'admin' && $_SESSION['staff_role'] != 'master_agent')) {
-    // Redirect unauthorized users
-    header('Location: ../login.php');
-    exit;
-}
 $mysqli = db_connect();
 $success_message = '';
 $error_message = '';

@@ -92,32 +92,137 @@ function getAssignableUsers()
 function getStaffMemberDetails()
 {
     $mysqli = db_connect();
-    
+
     // Prepare the SQL statement to prevent SQL injection
     $stmt = $mysqli->prepare("SELECT id, name, email FROM staff_members WHERE id = ?");
-    
+
     // Bind the user_id parameter
     $stmt->bind_param("i", $_SESSION['user_id']);
-    
+
     // Execute the query
     $stmt->execute();
-    
+
     // Get the result
     $result = $stmt->get_result();
-    
+
     // Check if a staff member was found
     if ($result->num_rows > 0) {
         // Fetch the staff member details
         $staff_member = $result->fetch_assoc();
-        
+
         // Update session with staff member details
         $_SESSION['staff_member_id'] = $staff_member['id'];
         $_SESSION['staff_member_name'] = $staff_member['name'];
         $_SESSION['staff_member_email'] = $staff_member['email'];
-        
+
         return $staff_member;
     }
-    
+
     // Return null if no staff member found
     return null;
+}
+
+function is_logged_in()
+{
+    // Check for defined constants (set by our auth bridge)
+    if (defined('SKIP_AUTH_CHECK') && SKIP_AUTH_CHECK === true) {
+        return true;
+    }
+
+    // Make sure session is started
+    if (session_status() === PHP_SESSION_NONE) {
+        session_start();
+    }
+
+    return isset($_SESSION['user_id']) && !empty($_SESSION['user_id']);
+}
+
+/**
+ * Check if user is staff member
+ *
+ * @return bool True if user is staff
+ */
+function is_staff()
+{
+    // Check for defined constants (set by our auth bridge)
+    if (defined('IS_STAFF') && IS_STAFF === true) {
+        return true;
+    }
+
+    // Make sure session is started
+    if (session_status() === PHP_SESSION_NONE) {
+        session_start();
+    }
+
+    return isset($_SESSION['is_staff']) && $_SESSION['is_staff'] === true;
+}
+
+/**
+ * Check if user has admin role
+ *
+ * @return bool True if user is admin
+ */
+function is_admin()
+{
+    // Make sure session is started
+    if (session_status() === PHP_SESSION_NONE) {
+        session_start();
+    }
+
+    return isset($_SESSION['staff_role']) && $_SESSION['staff_role'] === 'admin';
+}
+
+/**
+ * Get staff role
+ *
+ * @return string Staff role or empty string if not staff
+ */
+function get_staff_role()
+{
+    // Make sure session is started
+    if (session_status() === PHP_SESSION_NONE) {
+        session_start();
+    }
+
+    return $_SESSION['staff_role'] ?? '';
+}
+
+/**
+ * Redirect if not logged in
+ *
+ * @param string $redirect_url URL to redirect to if not logged in
+ * @return void
+ */
+function require_login($redirect_url = 'login.php')
+{
+    // Skip check if our auth bridge has already done this
+    if (defined('SKIP_AUTH_CHECK') && SKIP_AUTH_CHECK === true) {
+        return;
+    }
+
+    if (!is_logged_in()) {
+        $_SESSION['redirect_after_login'] = $_SERVER['REQUEST_URI'];
+        header("Location: $redirect_url");
+        exit;
+    }
+}
+
+/**
+ * Redirect if not staff
+ *
+ * @param string $redirect_url URL to redirect to if not staff
+ * @return void
+ */
+function require_staff($redirect_url = 'login.php')
+{
+    // Skip check if our auth bridge has already done this
+    if (defined('SKIP_AUTH_CHECK') && SKIP_AUTH_CHECK === true) {
+        return;
+    }
+
+    if (!is_logged_in() || !is_staff()) {
+        $_SESSION['redirect_after_login'] = $_SERVER['REQUEST_URI'];
+        header("Location: $redirect_url");
+        exit;
+    }
 }

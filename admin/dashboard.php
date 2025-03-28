@@ -3,7 +3,6 @@ ob_start();
 require_once '../includes/config.php';
 require_once '../includes/functions.php';
 
-// At the top of your script or in config.php
 if (isset($_SESSION['user_id'])) {
     $staff_member_id = getStaffMemberDetails();
 
@@ -15,6 +14,7 @@ if (isset($_SESSION['user_id'])) {
     }
 }
 
+$isAdmin = isset($_SESSION['staff_role']) && $_SESSION['staff_role'] === 'admin';
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -36,7 +36,8 @@ if (isset($_SESSION['user_id'])) {
     openSubmenu: '<?php echo isset($_GET['view']) && $_GET['view'] === 'staff-management' ? 'users' : ''; ?>',
     searchExpanded: false,
     isViewsListOpen: true,
-    profileMenuOpen: false
+    profileMenuOpen: false,
+    isAdmin: <?php echo $isAdmin ? 'true' : 'false'; ?>
 }">
     <!-- Top Navigation Bar -->
     <nav class="navy-bg h-16 flex items-center px-6 fixed w-full z-50">
@@ -123,7 +124,8 @@ if (isset($_SESSION['user_id'])) {
                         <span :class="{ 'hidden': !sidebarOpen }">Tickets</span>
                     </button>
 
-                    <div>
+                    <!-- Users/Agents Menu - Only visible to admins -->
+                    <div x-show="isAdmin">
                         <button @click="openSubmenu = openSubmenu === 'users' ? '' : 'users'"
                             class="w-full flex items-center space-x-3 px-3 py-2 rounded-lg text-white hover:bg-white/10 nav-item"
                             :class="{ 'active': activeView.startsWith('users') }">
@@ -146,10 +148,12 @@ if (isset($_SESSION['user_id'])) {
                                 :class="{ 'active': activeView === 'staff-management' }">
                                 <i class="fas fa-user-plus"></i>
                                 <span>Staff Management</span>
+                            </button>
                         </div>
                     </div>
 
-                    <div>
+                    <!-- Registration Menu - Only visible to admins -->
+                    <div x-show="isAdmin">
                         <button @click="openSubmenu = openSubmenu === 'registration' ? '' : 'registration'"
                             class="w-full flex items-center space-x-3 px-3 py-2 rounded-lg text-white hover:bg-white/10 nav-item"
                             :class="{ 'active': activeView.startsWith('registration') }">

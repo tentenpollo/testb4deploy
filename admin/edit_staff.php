@@ -1,11 +1,6 @@
 <?php
 require_once '../includes/config.php';
 
-// Check if user is authorized (admin or master_agent)
-if (!isset($_SESSION['user_id']) || ($_SESSION['staff_role'] != 'admin' && $_SESSION['staff_role'] != 'master_agent')) {
-    header('Location: login.php');
-    exit;
-}
 
 $success_message = '';
 $error_message = '';

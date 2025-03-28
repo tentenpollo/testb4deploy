@@ -288,7 +288,6 @@ if (isset($_GET['action'])) {
                 $db = db_connect();
                 $ticket_id = $db->real_escape_string($ticket_id);
 
-                // Same lookup logic as download_attachment
                 if (isset($_GET['attachment_id'])) {
                     $attachment_id = $_GET['attachment_id'];
                     $attachment_id = $db->real_escape_string($attachment_id);
@@ -402,7 +401,7 @@ if (isset($_GET['action'])) {
 
                                     header('Content-Type: ' . $content_type);
                                     header('Content-Length: ' . filesize($alt_path));
-
+                                    header('Content-Disposition: inline; filename="' . basename($file_path) . '"');
                                     readfile($alt_path);
                                     $found = true;
                                     exit;
@@ -458,7 +457,8 @@ if (isset($_GET['action'])) {
                     $sql = "SELECT * FROM attachments WHERE ticket_id = '$ticket_id'";
 
                 } else {
-                    echo json_encode(['success' => false, 'error' => 'Missing required parameters']);
+                    header('HTTP/1.1 400 Bad Request');
+                    echo 'Missing required parameters';
                     break;
                 }
 
@@ -467,7 +467,8 @@ if (isset($_GET['action'])) {
 
                 if (!$result) {
                     error_log("Database error: " . $db->error);
-                    echo json_encode(['success' => false, 'error' => 'Database error']);
+                    header('HTTP/1.1 500 Internal Server Error');
+                    echo 'Database error';
                     break;
                 }
 
@@ -486,27 +487,14 @@ if (isset($_GET['action'])) {
                     while ($row = $result->fetch_assoc()) {
                         $stored_filename = basename($row['file_path']);
 
-                        // Try exact match first
-                        if ($stored_filename === $filename) {
+                        // Try multiple matching methods for filename
+                        if (
+                            $stored_filename === $filename ||
+                            preg_match('/^\d+_' . preg_quote($filename, '/') . '$/', $stored_filename) ||
+                            strcasecmp($stored_filename, $filename) === 0
+                        ) {
                             $attachment = $row;
-                            error_log("Found exact filename match: $stored_filename");
-                            break;
-                        }
-
-                        // Try prefix match (timestamp_filename)
-                        if (preg_match('/^\d+_(.*)$/', $stored_filename, $matches)) {
-                            $original_name = $matches[1];
-                            if ($original_name === $filename) {
-                                $attachment = $row;
-                                error_log("Found match with timestamp prefix: $stored_filename");
-                                break;
-                            }
-                        }
-
-                        // Try case-insensitive match
-                        if (strcasecmp($stored_filename, $filename) === 0) {
-                            $attachment = $row;
-                            error_log("Found case-insensitive match: $stored_filename");
+                            error_log("Found filename match: $stored_filename");
                             break;
                         }
                     }
@@ -516,97 +504,121 @@ if (isset($_GET['action'])) {
                     $file_path = $attachment['file_path'];
                     error_log("Found attachment with path: $file_path");
 
-                    // Check if file exists
-                    if (file_exists($file_path)) {
-                        error_log("File exists at: $file_path");
+                    // Define content types for various file types
+                    $content_types = [
+                        'png' => 'image/png',
+                        'jpg' => 'image/jpeg',
+                        'jpeg' => 'image/jpeg',
+                        'gif' => 'image/gif',
+                        'svg' => 'image/svg+xml',
+                        'webp' => 'image/webp',
+                        'bmp' => 'image/bmp',
+                        'pdf' => 'application/pdf',
+                        'doc' => 'application/msword',
+                        'docx' => 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+                        'xls' => 'application/vnd.ms-excel',
+                        'xlsx' => 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+                        'txt' => 'text/plain',
+                        'csv' => 'text/csv',
+                        'zip' => 'application/zip',
+                        'rar' => 'application/x-rar-compressed'
+                    ];
+
+                    // Function to output a file for download
+                    $serve_file = function ($path) use ($content_types) {
+                        // Ensure we have a valid path
+                        if (!file_exists($path) || !is_readable($path)) {
+                            error_log("File not readable: $path");
+                            header('HTTP/1.1 404 Not Found');
+                            echo 'File not readable';
+                            exit;
+                        }
 
                         // Get file extension and determine content type
-                        $file_ext = strtolower(pathinfo($file_path, PATHINFO_EXTENSION));
-                        $content_types = [
-                            'png' => 'image/png',
-                            'jpg' => 'image/jpeg',
-                            'jpeg' => 'image/jpeg',
-                            'gif' => 'image/gif',
-                            'pdf' => 'application/pdf',
-                            'doc' => 'application/msword',
-                            'docx' => 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-                            'xls' => 'application/vnd.ms-excel',
-                            'xlsx' => 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-                            'txt' => 'text/plain',
-                            'csv' => 'text/csv',
-                            'zip' => 'application/zip',
-                            'rar' => 'application/x-rar-compressed'
-                        ];
+                        $file_ext = strtolower(pathinfo($path, PATHINFO_EXTENSION));
+                        error_log("Serving file with extension: $file_ext");
 
+                        // Get proper content type or default to binary
                         $content_type = isset($content_types[$file_ext]) ?
                             $content_types[$file_ext] : 'application/octet-stream';
 
-                        // Clean output buffer to prevent issues with file download
+                        // Clean output buffer - very important!
                         while (ob_get_level()) {
                             ob_end_clean();
                         }
 
-                        // Set appropriate headers for file download
+                        // Get the file size
+                        $filesize = filesize($path);
+
+                        // Set proper headers for file download
                         header('Content-Description: File Transfer');
                         header('Content-Type: ' . $content_type);
-                        header('Content-Disposition: attachment; filename="' . basename($file_path) . '"');
+                        header('Content-Disposition: attachment; filename="' . basename($path) . '"');
+                        header('Content-Transfer-Encoding: binary');
                         header('Expires: 0');
-                        header('Cache-Control: must-revalidate');
+                        header('Cache-Control: must-revalidate, post-check=0, pre-check=0');
                         header('Pragma: public');
-                        header('Content-Length: ' . filesize($file_path));
+                        header('Content-Length: ' . $filesize);
 
-                        // Output file contents and exit
-                        readfile($file_path);
+                        // Disable output buffering completely
+                        if (ob_get_level()) {
+                            ob_end_clean();
+                        }
+
+                        // Read the file and output it directly
+                        $handle = fopen($path, 'rb');
+                        if ($handle) {
+                            while (!feof($handle)) {
+                                echo fread($handle, 8192);
+                                flush(); // Flush after each chunk
+                            }
+                            fclose($handle);
+                        } else {
+                            error_log("Could not open file handle for: $path");
+                        }
+
                         exit;
-                    } else {
-                        error_log("ERROR: File not found at path: $file_path");
+                    };
 
-                        // Try some common alternative paths in case the path is relative or stored differently
-                        $alternative_paths = [
+                    // Check if file exists at the stored path
+                    if (file_exists($file_path)) {
+                        error_log("File exists at: $file_path");
+                        $serve_file($file_path);
+                    } else {
+                        error_log("File not found at path: $file_path");
+
+                        // Try alternative paths
+                        $alt_paths = [
                             $_SERVER['DOCUMENT_ROOT'] . '/' . $file_path,
                             $_SERVER['DOCUMENT_ROOT'] . '/uploads/' . basename($file_path),
                             dirname($_SERVER['SCRIPT_FILENAME']) . '/../uploads/' . basename($file_path),
-                            // Add more possible paths as needed for your specific setup
+                            dirname($_SERVER['SCRIPT_FILENAME']) . '/../uploads/tickets/' . $ticket_id . '/' . basename($file_path)
                         ];
 
                         $found = false;
-                        foreach ($alternative_paths as $alt_path) {
+                        foreach ($alt_paths as $alt_path) {
                             error_log("Checking alternative path: $alt_path");
                             if (file_exists($alt_path)) {
                                 error_log("File found at alternative path: $alt_path");
-
-                                // Same headers as above
-                                $file_ext = strtolower(pathinfo($alt_path, PATHINFO_EXTENSION));
-                                $content_type = isset($content_types[$file_ext]) ?
-                                    $content_types[$file_ext] : 'application/octet-stream';
-
-                                while (ob_get_level()) {
-                                    ob_end_clean();
-                                }
-
-                                header('Content-Description: File Transfer');
-                                header('Content-Type: ' . $content_type);
-                                header('Content-Disposition: attachment; filename="' . basename($alt_path) . '"');
-                                header('Expires: 0');
-                                header('Cache-Control: must-revalidate');
-                                header('Pragma: public');
-                                header('Content-Length: ' . filesize($alt_path));
-
-                                readfile($alt_path);
-                                exit;
+                                $serve_file($alt_path);
+                                $found = true;
+                                break; // No need for exit since serve_file already calls exit
                             }
                         }
 
                         if (!$found) {
-                            echo json_encode(['success' => false, 'error' => 'File not found on server']);
+                            header('HTTP/1.1 404 Not Found');
+                            echo 'File not found on server';
                         }
                     }
                 } else {
                     error_log("No matching attachment found in database");
-                    echo json_encode(['success' => false, 'error' => 'No matching attachment found']);
+                    header('HTTP/1.1 404 Not Found');
+                    echo 'No matching attachment found';
                 }
             } else {
-                echo json_encode(['success' => false, 'error' => 'Missing ticket ID']);
+                header('HTTP/1.1 400 Bad Request');
+                echo 'Missing ticket ID';
             }
             break;
 
@@ -665,3 +677,34 @@ if (isset($_GET['action'])) {
 
 
 ?>
+<script>
+    // JavaScript:
+    downloadAttachment(attachment) {
+        // Determine if this is an image file that can be previewed
+        const isImage = this.isImageAttachment(attachment);
+
+        // Base URL and parameters are the same for both types
+        let params = `ticket_id=${this.currentTicket.id}`;
+
+        // Add identifier parameters based on what's available
+        if (attachment.id) {
+            params += `&attachment_id=${attachment.id}`;
+        } else if (attachment.comment_id) {
+            const filename = attachment.filename || attachment.name || this.basename(attachment.file_path);
+            params += `&comment_id=${attachment.comment_id}&filename=${encodeURIComponent(filename)}`;
+        } else {
+            const filename = attachment.filename || attachment.name || this.basename(attachment.file_path);
+            params += `&filename=${encodeURIComponent(filename)}`;
+        }
+
+        if (isImage) {
+            // For images, use a special case
+            const downloadUrl = `ajax/image_download.php?${params}`;
+            window.location.href = downloadUrl;
+        } else {
+            // For non-images, use the regular download_attachment
+            const downloadUrl = `ajax/ajax_handlers.php?action=download_attachment&${params}`;
+            window.location.href = downloadUrl;
+        }
+    }
+</script>
