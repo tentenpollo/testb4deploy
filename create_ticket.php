@@ -18,16 +18,17 @@ if (is_guest() && isset($_SESSION['guest_email'])) {
 }
 
 // Get categories from database
-function getCategories() {
+function getCategories()
+{
     $db = db_connect();
     $result = $db->query("SELECT id, name FROM categories ORDER BY name");
     $categories = [];
-    
+
     if ($result) {
         while ($row = $result->fetch_assoc()) {
             $categories[$row['name']] = [];
             $categoryId = $row['id'];
-            
+
             // Get subcategories for this category
             $subcatStmt = $db->prepare("
                 SELECT s.id, s.name 
@@ -35,7 +36,7 @@ function getCategories() {
                 WHERE s.category_id = ?
                 ORDER BY s.name
             ");
-            
+
             if ($subcatStmt) {
                 $subcatStmt->bind_param("i", $categoryId);
                 if ($subcatStmt->execute()) {
@@ -47,8 +48,7 @@ function getCategories() {
             }
         }
     }
-    
-    // Fallback to hardcoded values if database query fails
+
     if (empty($categories)) {
         $categories = [
             'Technical' => ['Website Issue', 'Login Problem', 'Performance'],
@@ -56,7 +56,7 @@ function getCategories() {
             'General Inquiry' => ['Feedback', 'Account Inquiry', 'Other']
         ];
     }
-    
+
     return $categories;
 }
 
@@ -86,7 +86,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if (empty($description)) {
         $errors[] = "Description is required";
     }
-    
+
     if (empty($guest_email)) {
         $errors[] = "Email is required";
     } elseif (!filter_var($guest_email, FILTER_VALIDATE_EMAIL)) {
@@ -138,11 +138,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 }
             }
         }
-        
+
         if (!$categoryId) {
             $errors[] = "Invalid category. Please try again.";
         }
-        
+
         // Get subcategory ID
         $subcategoryId = null;
         $subcategoryStmt = $db->prepare("SELECT id FROM subcategories WHERE name = ? AND category_id = ?");
@@ -155,7 +155,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 }
             }
         }
-        
+
         if (!$subcategoryId) {
             $errors[] = "Invalid subcategory. Please try again.";
         }
@@ -166,40 +166,41 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         // Insert ticket into the database
         if (empty($errors)) {
             $stmt = $db->prepare("
-                INSERT INTO tickets (
-                    title, 
-                    description, 
-                    status, 
-                    created_by, 
-                    guest_email, 
-                    category_id,
-                    priority_id, 
-                    created_at, 
-                    updated_at
-                ) 
-                VALUES (?, ?, 'unseen', 'guest', ?, ?, ?, NOW(), NOW())
-            ");
-            
+    INSERT INTO tickets (
+        title, 
+        description, 
+        status, 
+        created_by, 
+        guest_email, 
+        category_id,
+        subcategory_id,
+        priority_id, 
+        created_at, 
+        updated_at
+    ) 
+    VALUES (?, ?, 'unseen', 'guest', ?, ?, ?, ?, NOW(), NOW())
+");
+
             if ($stmt === false) {
                 $errors[] = "Database error: " . $db->error;
             } else {
-                $stmt->bind_param("sssii", $subject, $description, $guest_email, $categoryId, $defaultPriority);
+                $stmt->bind_param("sssiii", $subject, $description, $guest_email, $categoryId, $subcategoryId, $defaultPriority);
                 if ($stmt->execute()) {
                     $ticketId = $db->insert_id;
-                    
+
                     // If there's an attachment, store its reference in a separate table
                     if ($attachmentPath) {
                         $attachStmt = $db->prepare("
                             INSERT INTO ticket_attachments (ticket_id, file_path, created_at) 
                             VALUES (?, ?, NOW())
                         ");
-                        
+
                         if ($attachStmt) {
                             $attachStmt->bind_param("is", $ticketId, $attachmentPath);
                             $attachStmt->execute();
                         }
                     }
-                    
+
                     $success = true;
                 } else {
                     $errors[] = "Failed to create ticket. Please try again.";
@@ -261,12 +262,13 @@ include 'includes/header.php';
                 <label for="description">Description</label>
                 <textarea id="description" name="description" class="form-control" rows="5" required></textarea>
             </div>
-            
+
             <div class="form-group">
                 <label for="guest_email">Your Email</label>
-                <input type="email" id="guest_email" name="guest_email" class="form-control" value="<?php echo htmlspecialchars($guest_email); ?>" <?php echo !empty($guest_email) ? 'readonly' : 'required'; ?>>
+                <input type="email" id="guest_email" name="guest_email" class="form-control"
+                    value="<?php echo htmlspecialchars($guest_email); ?>" <?php echo !empty($guest_email) ? 'readonly' : 'required'; ?>>
                 <?php if (!empty($guest_email)): ?>
-                <small class="form-text">Email from your guest session</small>
+                    <small class="form-text">Email from your guest session</small>
                 <?php endif; ?>
             </div>
 

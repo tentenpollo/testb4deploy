@@ -2,6 +2,7 @@
 ob_start();
 require_once '../includes/config.php';
 require_once '../includes/functions.php';
+
 $tickets = getAllTickets();
 $priorities = getAllPriorities();
 $categories = getAllCategories();
@@ -94,13 +95,17 @@ $pastDueCount = count(array_filter($tickets, function ($ticket) {
             },
 
             get filteredTicketHistory() {
+                if (!this.ticketHistory) return [];
+
                 if (this.activeTab === 'user') {
+                    // Show only external communications (with customers)
                     return this.ticketHistory.filter(activity =>
-                        activity.type === 'comment' && activity.is_internal === '0'
+                        activity.is_internal === '0'
                     );
                 } else if (this.activeTab === 'internal') {
+                    // Show only internal notes between staff
                     return this.ticketHistory.filter(activity =>
-                        activity.type === 'comment' && activity.is_internal !== '0'
+                        activity.is_internal === '1'
                     );
                 }
                 return this.ticketHistory;
@@ -504,13 +509,12 @@ $pastDueCount = count(array_filter($tickets, function ($ticket) {
 
                     if (data.success) {
                         console.log("Raw history data:", data.history);
-                        // Log each item's is_internal value
-                        data.history.forEach(item => {
-                            console.log(`Comment "${item.content.substring(0, 20)}..." is_internal:`,
-                                item.is_internal,
-                                "type:", typeof item.is_internal);
-                        });
                         this.ticketHistory = data.history;
+
+                        // Log each item for debugging
+                        data.history.forEach(item => {
+                            console.log(`Comment by "${item.user_name}" - commenter_type: ${item.commenter_type}, is_agent: ${item.is_agent}, is_internal: ${item.is_internal}`);
+                        });
                     } else {
                         alert('Error loading ticket history: ' + data.error);
                     }
@@ -2327,31 +2331,31 @@ $pastDueCount = count(array_filter($tickets, function ($ticket) {
                         <!-- This is the tab content area where comments should be displayed -->
                         <div class="bg-gray-50 rounded-lg border border-gray-200 h-96 flex flex-col">
                             <div class="flex-1 overflow-y-auto p-4 space-y-3">
-                                <!-- This is where comments should appear -->
+                                <!-- Template for displaying comments -->
                                 <template x-for="(activity, index) in filteredTicketHistory" :key="index">
-                                    <!-- Comment display code -->
                                     <div class="flex flex-col" :class="{
-                'items-end': activity.is_agent && !activity.is_internal, 
-                'items-start': !activity.is_agent || activity.is_internal
-            }">
+        'items-end': activity.is_agent && activity.is_internal === '0', 
+        'items-start': !activity.is_agent || activity.is_internal === '1'
+    }">
                                         <div class="max-w-[80%] mb-1">
                                             <div class="p-3 rounded-lg shadow-sm" :class="{
-                        'bg-blue-100 border border-blue-200 rounded-tr-none': activity.is_agent && !activity.is_internal, 
-                        'bg-white border border-gray-200 rounded-tl-none': !activity.is_agent,
-                        'bg-yellow-50 border border-yellow-200 rounded-tl-none': activity.is_internal
-                    }">
+                'bg-blue-100 border border-blue-200 rounded-tr-none': activity.is_agent && activity.is_internal === '0', 
+                'bg-white border border-gray-200 rounded-tl-none': !activity.is_agent && activity.is_internal === '0',
+                'bg-yellow-50 border border-yellow-200': activity.is_internal === '1'
+            }">
                                                 <!-- Comment content -->
                                                 <div class="flex items-start gap-2 mb-2">
                                                     <!-- Avatar -->
                                                     <div class="w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0"
                                                         :class="{
-                                    'bg-blue-500 text-white': activity.is_agent && !activity.is_internal,
-                                    'bg-gray-500 text-white': !activity.is_agent,
-                                    'bg-yellow-500 text-white': activity.is_internal
-                                }">
+                        'bg-blue-500 text-white': activity.is_agent && activity.is_internal === '0',
+                        'bg-gray-500 text-white': !activity.is_agent && activity.is_internal === '0',
+                        'bg-yellow-500 text-white': activity.is_internal === '1'
+                    }">
                                                         <span class="text-xs font-bold"
                                                             x-text="activity.user_name?.charAt(0) || 'U'"></span>
                                                     </div>
+
                                                     <!-- Username and timestamp -->
                                                     <div class="flex-1">
                                                         <div class="flex justify-between items-center">
@@ -2360,17 +2364,20 @@ $pastDueCount = count(array_filter($tickets, function ($ticket) {
                                                             <span class="text-xs text-gray-500"
                                                                 x-text="formatDate(activity.created_at)"></span>
                                                         </div>
+
+                                                        <!-- Badge for internal vs external communication -->
                                                         <div x-show="activity.is_internal === '1'"
                                                             class="text-xs bg-yellow-200 text-yellow-800 px-2 py-0.5 rounded inline-block mb-1">
                                                             Internal Note
                                                         </div>
-
                                                         <div x-show="activity.is_internal === '0'"
                                                             class="text-xs bg-blue-200 text-blue-800 px-2 py-0.5 rounded inline-block mb-1">
-                                                            User Communication
+                                                            <template x-if="activity.is_agent">Agent Response</template>
+                                                            <template x-if="!activity.is_agent">User Message</template>
                                                         </div>
                                                     </div>
                                                 </div>
+
                                                 <!-- Comment text -->
                                                 <div class="text-sm email-content break-words"
                                                     x-html="activity.content"></div>
@@ -2380,13 +2387,11 @@ $pastDueCount = count(array_filter($tickets, function ($ticket) {
                                                     class="mt-3 pt-2 border-t border-gray-200">
                                                     <p class="text-xs font-medium text-gray-500 mb-1">Attachments:</p>
                                                     <div class="flex flex-wrap gap-2">
-                                                        <!-- In your ticket details modal, where attachments are displayed -->
                                                         <template x-for="(file, fileIndex) in activity.attachments"
                                                             :key="fileIndex">
                                                             <div
                                                                 class="flex items-center bg-gray-100 rounded px-2 py-1 text-xs">
                                                                 <i class="fas fa-paperclip mr-1 text-gray-500"></i>
-                                                                <!-- Make filename clickable -->
                                                                 <span x-text="file.filename || file.name"
                                                                     @click="isImageAttachment(file) ? openImageViewer(file) : downloadAttachment(file)"
                                                                     class="mr-1 truncate max-w-[120px] cursor-pointer hover:text-blue-500"></span>
@@ -2590,9 +2595,7 @@ $pastDueCount = count(array_filter($tickets, function ($ticket) {
                                     x-text="formatDate(currentTicket?.updated_at)"></span>
                             </p>
                             <p><strong>SLA Status:</strong> <span class="text-green-600">Within SLA</span></p>
-                            <p><strong>Department:</strong> <span x-text="currentTicket?.department || 'N/A'"></span>
-                            </p>
-                            <p><strong>Product:</strong> <span x-text="currentTicket?.product || 'N/A'"></span></p>
+                            <p><strong>Subcategory:</strong> <span x-text="currentTicket?.department || 'N/A'"></span>
                         </div>
                     </div>
                 </div>

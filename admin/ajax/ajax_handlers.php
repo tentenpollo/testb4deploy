@@ -201,20 +201,29 @@ if (isset($_GET['action'])) {
                 $ticket_id = $_POST['ticket_id'];
                 $content = $_POST['content'];
                 $is_private = isset($_POST['is_private']) ? (bool) $_POST['is_private'] : false;
-                $user_id = $_SESSION['user_id'];
 
+                // Initialize user_id and user_type with appropriate values based on session
+                $user_id = null;
                 $user_type = 'user';
 
-                if (isset($_SESSION['is_staff'])) {
-                    $user_type = 'staff';
-                    $user_id = $_SESSION['user_id'];
+                if (isset($_SESSION['is_staff']) && $_SESSION['is_staff']) {
+                    // Staff member or admin
+                    if (isset($_SESSION['staff_role']) && $_SESSION['staff_role'] === 'admin') {
+                        $user_type = 'admin';
+                    } else {
+                        $user_type = 'staff';
+                    }
+
+                    // For staff and admin, use staff_id if available
+                    $user_id = isset($_SESSION['staff_id']) ? $_SESSION['staff_id'] : $_SESSION['user_id'];
                 } elseif (isset($_SESSION['guest_email'])) {
+                    // Guest user
                     $user_type = 'guest';
                     $user_id = $_SESSION['guest_email']; // Use email as identifier
+                } else {
+                    // Regular user
+                    $user_id = $_SESSION['user_id'];
                 }
-
-                // Additional admin check
-                $isAdmin = isset($_SESSION['staff_role']) && $_SESSION['staff_role'] === 'admin';
 
                 // Process any attachments
                 $attachments = [];
@@ -240,10 +249,18 @@ if (isset($_GET['action'])) {
                     }
                 }
 
-                // Call the modified function with updated parameter order
+                // Call the function with the updated user_type and appropriate user_id
                 $result = add_ticket_comment($ticket_id, $user_id, $content, $attachments, $user_type, $is_private);
 
                 if ($result) {
+                    // Update ticket status if this is a user reply (not staff/admin)
+                    if ($user_type === 'user') {
+                        $db = db_connect();
+                        $ticket_id_escaped = $db->real_escape_string($ticket_id);
+                        $update_query = "UPDATE tickets SET status = 'open', updated_at = NOW() WHERE id = '$ticket_id_escaped'";
+                        $db->query($update_query);
+                    }
+
                     echo json_encode(['success' => true, 'comment_id' => $result]);
                 } else {
                     echo json_encode(['success' => false, 'error' => 'Failed to add comment']);
@@ -654,14 +671,36 @@ if (isset($_GET['action'])) {
 
             $ticket_id = intval($_POST['ticket_id']);
             $content = $_POST['content'];
-            $user_id = $_SESSION['user_id'];
+
+            // Determine the correct user_id and user_type
+            if (isset($_SESSION['is_staff']) && $_SESSION['is_staff']) {
+                // This is a staff member
+                $user_id = $_SESSION['staff_id'];
+                $user_type = $_SESSION['staff_role'] === 'admin' ? 'admin' : 'staff';
+                $is_private = isset($_POST['is_private']) && $_POST['is_private'] ? true : false;
+            } else {
+                // This is a regular user
+                $user_id = $_SESSION['user_id'];
+                $user_type = 'user';
+                $is_private = false; // Regular users can't create private notes
+            }
 
             // Handle file upload if present
             $attachments = isset($_FILES['attachment']) ? [$_FILES['attachment']] : [];
 
-            $result = add_ticket_comment($ticket_id, $user_id, $content, $attachments, 'user', false);
+            // Add the comment using the fixed function
+            $result = add_ticket_comment($ticket_id, $user_id, $content, $attachments, $user_type, $is_private);
 
             if ($result) {
+                // Update the ticket status if needed
+                if ($user_type === 'user') {
+                    // When a user replies, set status to open
+                    $db = db_connect();
+                    $ticket_id_escaped = $db->real_escape_string($ticket_id);
+                    $update_query = "UPDATE tickets SET status = 'open', updated_at = NOW() WHERE id = '$ticket_id_escaped'";
+                    $db->query($update_query);
+                }
+
                 echo json_encode(['success' => true, 'comment_id' => $result]);
             } else {
                 echo json_encode(['success' => false, 'error' => 'Failed to add reply']);

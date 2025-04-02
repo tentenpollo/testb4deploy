@@ -84,12 +84,28 @@ function get_ticket_history($ticket_id)
 
     $ticket_id = $db->real_escape_string($ticket_id);
 
-    // Get comments
-    $query = "SELECT h.*, s.name AS user_name 
-              FROM ticket_comments h
-              LEFT JOIN staff_members s ON h.user_id = s.id
-              WHERE h.ticket_id = '$ticket_id'
-              ORDER BY h.created_at DESC LIMIT 0, 25";
+    $query = "
+        SELECT 
+            tc.*,
+            u.first_name AS user_first_name,
+            u.last_name AS user_last_name,
+            sm.name AS staff_name,
+            CASE 
+                WHEN tc.commenter_type = 'staff' THEN 
+                    (SELECT name FROM staff_members WHERE id = tc.staff_id)
+                WHEN tc.commenter_type = 'user' THEN 
+                    (SELECT CONCAT(first_name, ' ', last_name) FROM users WHERE user_id = tc.user_id)
+                ELSE 'Guest'
+            END AS user_name
+        FROM 
+            ticket_comments tc
+        LEFT JOIN users u ON tc.user_id = u.user_id
+        LEFT JOIN staff_members sm ON tc.staff_id = sm.id
+        WHERE 
+            tc.ticket_id = '$ticket_id'
+        ORDER BY 
+            tc.created_at ASC
+    ";
 
     $result = $db->query($query);
 
@@ -98,21 +114,30 @@ function get_ticket_history($ticket_id)
         while ($row = $result->fetch_assoc()) {
             // Get attachments for this comment
             $comment_id = $db->real_escape_string($row['id']);
-            $attachments_query = "SELECT * FROM attachments 
-                                 WHERE ticket_id = '$ticket_id' 
-                                 AND comment_id = '$comment_id'";
-            
+            $attachments_query = "
+                SELECT * FROM attachments 
+                WHERE ticket_id = '$ticket_id' 
+                AND comment_id = '$comment_id'
+            ";
+
             $attachments_result = $db->query($attachments_query);
             $attachments = [];
-            
+
             if ($attachments_result && $attachments_result->num_rows > 0) {
                 while ($attachment = $attachments_result->fetch_assoc()) {
                     $attachments[] = $attachment;
                 }
             }
-            
+
             // Add attachments to the comment data
             $row['attachments'] = $attachments;
+
+            // Add a calculated is_agent field for easier frontend handling
+            $row['is_agent'] = ($row['commenter_type'] === 'staff' || !empty($row['staff_id']));
+
+            // Make sure is_internal is consistent (using string values for comparison)
+            $row['is_internal'] = $row['is_internal'] ? '1' : '0';
+
             $history[] = $row;
         }
     }
@@ -158,10 +183,28 @@ function add_ticket_comment($ticket_id, $user_id, $content, $attachments = [], $
         $user_id = $db->real_escape_string($user_id);
         $content = $db->real_escape_string($content);
         $is_private = $is_private ? 1 : 0;
+
+        $commenter_type = $user_type;
+        if ($user_type == 'admin') {
+            $commenter_type = 'staff'; // Use 'staff' for admin as the enum doesn't have 'admin'
+        }
+
+        // Initialize staff_id and actual user_id for the query
+        $staff_id = 'NULL';
+        $actual_user_id = 'NULL';
         
-        // Insert the comment
-        $query = "INSERT INTO ticket_comments (ticket_id, user_id, type, content, is_internal, created_at)
-                VALUES ('$ticket_id', '$user_id', 'comment', '$content', '$is_private', NOW())";
+        if ($user_type == 'staff' || $user_type == 'admin') {
+            // For staff or admin, use staff_id column
+            $staff_id = "'$user_id'";
+        } elseif ($user_type == 'guest') {
+            // For guests, both user_id and staff_id remain NULL
+        } else {
+            // For regular users, set the user_id column
+            $actual_user_id = "'$user_id'";
+        }
+
+        $query = "INSERT INTO ticket_comments (ticket_id, user_id, staff_id, type, content, is_internal, created_at, commenter_type)
+                 VALUES ('$ticket_id', $actual_user_id, $staff_id, 'comment', '$content', '$is_private', NOW(), '$commenter_type')";
 
         if (!$db->query($query)) {
             throw new Exception("Failed to insert comment: " . $db->error);
@@ -169,7 +212,9 @@ function add_ticket_comment($ticket_id, $user_id, $content, $attachments = [], $
 
         $comment_id = $db->insert_id;
 
-        log_ticket_history($ticket_id, $user_id, 'comment', null, substr($content, 0, 50) . (strlen($content) > 50 ? '...' : ''));
+        if ($user_type == 'staff' || $user_type == 'admin') {
+            log_ticket_history($ticket_id, $user_id, 'comment', null, substr($content, 0, 50) . (strlen($content) > 50 ? '...' : ''));
+        }
 
         if (!empty($attachments)) {
             $upload_dir = '../../uploads/tickets/' . $ticket_id;
@@ -190,13 +235,14 @@ function add_ticket_comment($ticket_id, $user_id, $content, $attachments = [], $
                     if (move_uploaded_file($tmp_name, $file_path)) {
                         $filename = $db->real_escape_string($name);
                         $filepath = $db->real_escape_string($file_path);
-                        
+
                         // Determine which field to use based on user type
                         $attachment_fields = "ticket_id, comment_id, filename, file_path, created_at";
                         $attachment_values = "'$ticket_id', '$comment_id', '$filename', '$filepath', NOW()";
-                        
+
                         switch ($user_type) {
                             case 'staff':
+                            case 'admin':
                                 $attachment_fields .= ", uploaded_by_staff_member_id";
                                 $attachment_values .= ", '$user_id'";
                                 break;
@@ -210,7 +256,7 @@ function add_ticket_comment($ticket_id, $user_id, $content, $attachments = [], $
                                 $attachment_values .= ", '$user_id'";
                                 break;
                         }
-                        
+
                         $attachment_query = "INSERT INTO attachments ($attachment_fields) VALUES ($attachment_values)";
 
                         if (!$db->query($attachment_query)) {
@@ -233,6 +279,7 @@ function add_ticket_comment($ticket_id, $user_id, $content, $attachments = [], $
         return false;
     }
 }
+
 function update_ticket_status($ticket_id, $user_id, $new_status)
 {
     $db = db_connect();
