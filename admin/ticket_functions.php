@@ -51,13 +51,15 @@ function get_ticket_details($ticket_id)
     $ticket_id = $db->real_escape_string($ticket_id);
 
     $query = "SELECT t.*, 
-       c.name AS category_name, 
+       c.name AS category_name,
+       s.name AS subcategory_name, 
        p.name AS priority_name,
        IFNULL(CONCAT(u_created.first_name, ' ', u_created.last_name), 'Guest') AS created_by_name,
        IFNULL(CONCAT(u_assigned.first_name, ' ', u_assigned.last_name), 'Unassigned') AS assigned_to_name,
        IF(t.created_by = 'guest', t.guest_email, u_created.email) AS creator_email
 FROM tickets t
 LEFT JOIN categories c ON t.category_id = c.id
+LEFT JOIN subcategories s ON t.subcategory_id = s.id
 LEFT JOIN priorities p ON t.priority_id = p.id
 LEFT JOIN users u_created ON t.created_by = 'user' AND t.user_id = u_created.user_id
 LEFT JOIN users u_assigned ON t.assigned_to = u_assigned.user_id

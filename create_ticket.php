@@ -17,7 +17,37 @@ if (is_guest() && isset($_SESSION['guest_email'])) {
     $guest_email = $_SESSION['guest_email'];
 }
 
-// Get categories from database
+function generate_reference_id()
+{
+    // Get current year and month
+    $year_month = date('ym');
+
+    // Generate a random string of 5 alphanumeric characters
+    $characters = '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ';
+    $random_string = '';
+
+    for ($i = 0; $i < 5; $i++) {
+        $random_string .= $characters[rand(0, strlen($characters) - 1)];
+    }
+
+    // Create the reference ID in format TKT-YYMM-XXXXX
+    $reference_id = "TKT-{$year_month}-{$random_string}";
+
+    // Check if this reference ID already exists in the database
+    $db = db_connect();
+    $stmt = $db->prepare("SELECT id FROM tickets WHERE ref_id = ?");
+    $stmt->bind_param("s", $reference_id);
+    $stmt->execute();
+    $result = $stmt->get_result();
+
+    // If the reference ID already exists, generate a new one recursively
+    if ($result->num_rows > 0) {
+        return generate_reference_id();
+    }
+
+    return $reference_id;
+}
+
 function getCategories()
 {
     $db = db_connect();
@@ -165,26 +195,30 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
         // Insert ticket into the database
         if (empty($errors)) {
+            // Generate a unique reference ID
+            $reference_id = generate_reference_id();
+
             $stmt = $db->prepare("
-    INSERT INTO tickets (
-        title, 
-        description, 
-        status, 
-        created_by, 
-        guest_email, 
-        category_id,
-        subcategory_id,
-        priority_id, 
-        created_at, 
-        updated_at
-    ) 
-    VALUES (?, ?, 'unseen', 'guest', ?, ?, ?, ?, NOW(), NOW())
-");
+            INSERT INTO tickets (
+                title, 
+                description, 
+                status, 
+                created_by, 
+                guest_email, 
+                category_id,
+                subcategory_id,
+                priority_id, 
+                created_at, 
+                updated_at,
+                ref_id
+            ) 
+            VALUES (?, ?, 'unseen', 'guest', ?, ?, ?, ?, NOW(), NOW(), ?)
+        ");
 
             if ($stmt === false) {
                 $errors[] = "Database error: " . $db->error;
             } else {
-                $stmt->bind_param("sssiii", $subject, $description, $guest_email, $categoryId, $subcategoryId, $defaultPriority);
+                $stmt->bind_param("sssiisi", $subject, $description, $guest_email, $categoryId, $subcategoryId, $defaultPriority, $reference_id);
                 if ($stmt->execute()) {
                     $ticketId = $db->insert_id;
 
@@ -202,6 +236,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     }
 
                     $success = true;
+                    $successMessage = "Your ticket has been created successfully! Your reference ID is: $reference_id";
                 } else {
                     $errors[] = "Failed to create ticket. Please try again.";
                 }

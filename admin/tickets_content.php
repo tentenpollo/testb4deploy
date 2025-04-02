@@ -2591,11 +2591,18 @@ $pastDueCount = count(array_filter($tickets, function ($ticket) {
                     <div class="bg-white border border-gray-200 rounded-lg p-4">
                         <h3 class="text-lg font-semibold mb-3">Additional Information</h3>
                         <div class="space-y-2 text-sm">
-                            <p><strong>Last Updated:</strong> <span
-                                    x-text="formatDate(currentTicket?.updated_at)"></span>
-                            </p>
-                            <p><strong>SLA Status:</strong> <span class="text-green-600">Within SLA</span></p>
-                            <p><strong>Subcategory:</strong> <span x-text="currentTicket?.department || 'N/A'"></span>
+                            <!-- In the Additional Information section of the ticket modal -->
+                            <div class="bg-white border border-gray-200 rounded-lg p-4">
+                                <h3 class="text-lg font-semibold mb-3">Additional Information</h3>
+                                <div class="space-y-2 text-sm">
+                                    <p><strong>Last Updated:</strong> <span
+                                            x-text="formatDate(currentTicket?.updated_at)"></span>
+                                    </p>
+                                    <p><strong>SLA Status:</strong> <span class="text-green-600">Within SLA</span></p>  
+                                    <p><strong>Subcategory:</strong> <span
+                                            x-text="currentTicket?.subcategory_name || 'N/A'"></span></p>
+                                </div>
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -2603,6 +2610,7 @@ $pastDueCount = count(array_filter($tickets, function ($ticket) {
         </div>
     </div>
 </div>
+
 <div x-data="enhancedImageViewer()" x-show="isOpen" class="fixed inset-0 z-50 overflow-hidden" x-cloak>
     <!-- Modal Backdrop -->
     <div x-show="isOpen" x-transition:enter="transition ease-out duration-300" x-transition:enter-start="opacity-0"

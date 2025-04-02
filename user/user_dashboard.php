@@ -187,11 +187,14 @@ $user = $stmt->get_result()->fetch_assoc();
                         <h2 class="text-xl font-semibold mb-4">Recent Activity</h2>
                         <div class="space-y-4">
                             <?php
-                            $query = "SELECT t.*, c.name as category_name 
-                                     FROM tickets t 
-                                     LEFT JOIN categories c ON t.category_id = c.id 
-                                     WHERE t.user_id = ? 
-                                     ORDER BY t.created_at DESC LIMIT 5";
+                            $query = "SELECT t.*, 
+                            c.name as category_name,
+                            s.name as subcategory_name  -- Added this line
+                            FROM tickets t 
+                            LEFT JOIN categories c ON t.category_id = c.id 
+                            LEFT JOIN subcategories s ON t.subcategory_id = s.id  -- Added this line
+                            WHERE t.user_id = ? 
+                            ORDER BY t.created_at DESC LIMIT 5";
                             $stmt = $mysqli->prepare($query);
                             $stmt->bind_param("i", $user_id);
                             $stmt->execute();
@@ -204,15 +207,18 @@ $user = $stmt->get_result()->fetch_assoc();
                                         <h3 class="font-semibold"><?php echo htmlspecialchars($ticket['title']); ?></h3>
                                         <p class="text-sm text-gray-600">
                                             Category: <?php echo htmlspecialchars($ticket['category_name']); ?>
+                                            <?php if (!empty($ticket['subcategory_name'])): ?>
+                                                • Subcategory: <?php echo htmlspecialchars($ticket['subcategory_name']); ?>
+                                            <?php endif; ?>
                                         </p>
                                     </div>
                                     <div class="text-right">
                                         <span class="px-3 py-1 rounded-full text-sm 
-                                        <?php echo match ($ticket['status']) {
-                                            'open' => 'bg-blue-100 text-blue-800',
-                                            'closed' => 'bg-green-100 text-green-800',
-                                            default => 'bg-yellow-100 text-yellow-800'
-                                        }; ?>">
+        <?php echo match ($ticket['status']) {
+            'open' => 'bg-blue-100 text-blue-800',
+            'closed' => 'bg-green-100 text-green-800',
+            default => 'bg-yellow-100 text-yellow-800'
+        }; ?>">
                                             <?php echo ucfirst($ticket['status']); ?>
                                         </span>
                                     </div>
@@ -471,6 +477,8 @@ $user = $stmt->get_result()->fetch_assoc();
                                         x-text="formatDate(currentTicket.created_at)"></span></p>
                                 <p class="text-sm text-gray-600"><strong>Last Updated:</strong> <span
                                         x-text="formatDate(currentTicket.updated_at)"></span></p>
+                                <p class="text-sm text-gray-600"><strong>Subcategory:</strong> <span
+                                        x-text="currentTicket.subcategory_name || 'N/A'"></span></p>
                             </div>
                             <div class="col-span-1 md:col-span-2">
                                 <h3 class="text-sm font-medium text-gray-500 mt-2">Description</h3>
