@@ -3,18 +3,34 @@ ob_start();
 require_once '../includes/config.php';
 require_once '../includes/functions.php';
 
-if (isset($_SESSION['user_id'])) {
-    $staff_member_id = getStaffMemberDetails();
-
-    if ($staff_member_id) {
-        $_SESSION['staff_member_id'] = $staff_member_id;
-    } else {
-        // Optional: handle case where no staff member is found
-        error_log("No staff member found for user ID: " . $_SESSION['user_id']);
-    }
+// Check if user is logged in
+if (!isset($_SESSION['user_id'])) {
+    // User is not logged in, redirect to login page
+    header('Location: ../login.php');
+    exit;
 }
 
-$isAdmin = isset($_SESSION['staff_role']) && $_SESSION['staff_role'] === 'admin';
+// Get staff member details if user is logged in
+$staff_member_id = getStaffMemberDetails();
+
+if ($staff_member_id) {
+    $_SESSION['staff_member_id'] = $staff_member_id;
+} else {
+    // No staff member found for this user
+    error_log("No staff member found for user ID: " . $_SESSION['user_id']);
+    // Redirect to login page
+    header('Location: ../login.php');
+    exit;
+}
+
+// Check if user has staff role
+if (!isset($_SESSION['staff_role'])) {
+    // User doesn't have a staff role, redirect to login page
+    header('Location: ../login.php');
+    exit;
+}
+
+$isAdmin = $_SESSION['staff_role'] === 'admin';
 ?>
 <!DOCTYPE html>
 <html lang="en">

@@ -400,9 +400,7 @@ body {
             display: flex;
             gap: 1rem;
             height: calc(100vh - 150px);
-            /* Adjust based on your header/footer height */
             overflow-y: hidden;
-            /* Prevent container scrolling */
         }
 
         .kanban-columns {
