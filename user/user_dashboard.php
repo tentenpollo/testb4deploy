@@ -265,14 +265,14 @@ $user = $stmt->get_result()->fetch_assoc();
                             <div>
                                 <label for="category" class="block text-sm font-medium text-gray-700">Filter by
                                     Category</label>
-                                <select id="category" name="category"
-                                    class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500">
-                                    <option value="">All Categories</option>
+                                <select id="category" name="category" onchange="handleCategoryChange(this.value)"
+                                    class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
+                                    required>
+                                    <option value="">Select a category</option>
                                     <?php
                                     $categories_query = $mysqli->query("SELECT * FROM categories ORDER BY name");
                                     while ($category = $categories_query->fetch_assoc()) {
-                                        $selected = (isset($_GET['category']) && $_GET['category'] == $category['id']) ? 'selected' : '';
-                                        echo "<option value='" . htmlspecialchars($category['id']) . "' $selected>" . htmlspecialchars($category['name']) . "</option>";
+                                        echo "<option value='" . htmlspecialchars($category['id']) . "'>" . htmlspecialchars($category['name']) . "</option>";
                                     }
                                     ?>
                                 </select>
@@ -376,7 +376,7 @@ $user = $stmt->get_result()->fetch_assoc();
 
                         <div>
                             <label for="category" class="block text-sm font-medium text-gray-700">Category</label>
-                            <select id="category" name="category"
+                            <select id="category" name="category" onchange="handleCategoryChange(this.value)"
                                 class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
                                 required>
                                 <option value="">Select a category</option>
@@ -859,34 +859,33 @@ $user = $stmt->get_result()->fetch_assoc();
             };
         };
 
-        document.addEventListener('DOMContentLoaded', function () {
-            const categorySelect = document.getElementById('category');
+        function handleCategoryChange(categoryId) {
             const subcategorySelect = document.getElementById('subcategory');
 
-            if (categorySelect && subcategorySelect) {
-                categorySelect.addEventListener('change', function () {
-                    const categoryId = this.value;
-                    subcategorySelect.innerHTML = '<option value="">Select a subcategory</option>';
+            // Reset subcategory dropdown
+            subcategorySelect.innerHTML = '<option value="">Select a subcategory</option>';
 
-                    if (categoryId) {
-                        // Fetch subcategories for the selected category
-                        fetch(`get_subcategories.php?category_id=${categoryId}`)
-                            .then(response => response.json())
-                            .then(data => {
-                                if (data.length > 0) {
-                                    data.forEach(subcategory => {
-                                        const option = document.createElement('option');
-                                        option.value = subcategory.id;
-                                        option.textContent = subcategory.name;
-                                        subcategorySelect.appendChild(option);
-                                    });
-                                }
-                            })
-                            .catch(error => console.error('Error fetching subcategories:', error));
-                    }
-                });
+            if (!categoryId) {
+                return;
             }
-        });
+
+            // Fetch subcategories
+            fetch('get_subcategories.php?category_id=' + categoryId)
+                .then(response => response.json())
+                .then(data => {
+                    if (data.length > 0) {
+                        data.forEach(subcategory => {
+                            const option = document.createElement('option');
+                            option.value = subcategory.id;
+                            option.textContent = subcategory.name;
+                            subcategorySelect.appendChild(option);
+                        });
+                    }
+                })
+                .catch(error => {
+                    console.error('Error fetching subcategories:', error);
+                });
+        }
     </script>
 </body>
 
